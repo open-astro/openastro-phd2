@@ -1,0 +1,70 @@
+# openastro-phd2 CI — build + GTest/CTest suite
+#
+# Mirrors the canonical apt-package build recipe in debian/rules:
+#   cmake -DUSE_SYSTEM_LIBINDI=<auto> -DUSE_SYSTEM_GTEST=1 -DOPENSOURCE_ONLY=1
+#   ctest --output-on-failure
+# USE_SYSTEM_LIBINDI is auto-detected: use the distro libindi when it is
+# >= 2.0.0 (Ubuntu 24.04 ships 2.x), otherwise PHD2's thirdparty.cmake builds
+# INDI 2.x from source. OPENSOURCE_ONLY=1 drops proprietary camera SDKs.
+#
+# Complements the existing clang-format-check.yml (style); this adds the
+# build + unit-test gate (json / alpaca / discovery / guide-algorithm / indi
+# GTest targets registered in tests/CMakeLists.txt).
+
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-test:
+    name: Build + test (Linux)
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4.x pinned (immutable ref)
+        with:
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            libwxgtk3.2-dev \
+            libcfitsio-dev \
+            libindi-dev \
+            libopencv-dev \
+            libv4l-dev \
+            libnova-dev \
+            libcurl4-openssl-dev \
+            libeigen3-dev \
+            libgtest-dev
+
+      - name: Configure
+        run: |
+          if pkg-config --atleast-version=2.0.0 libindi >/dev/null 2>&1; then
+            USE_SYSTEM_LIBINDI=1
+          else
+            USE_SYSTEM_LIBINDI=0
+          fi
+          echo "USE_SYSTEM_LIBINDI=${USE_SYSTEM_LIBINDI}"
+          cmake -S . -B build \
+            -DUSE_SYSTEM_LIBINDI="${USE_SYSTEM_LIBINDI}" \
+            -DUSE_SYSTEM_GTEST=1 \
+            -DOPENSOURCE_ONLY=1
+
+      - name: Build
+        run: cmake --build build --parallel "$(nproc)"
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure
