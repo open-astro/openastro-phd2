@@ -85,15 +85,20 @@ if(WIN32)
     GIT_REPOSITORY https://github.com/microsoft/vcpkg.git
     # vcpkg release tag: 2026.03.18
     GIT_TAG c3867e714dd3a51c272826eea77267876517ed99
-    UPDATE_COMMAND bootstrap-vcpkg.bat -disableMetrics
+    # Invoke the bootstrap script and vcpkg by absolute path via the
+    # <SOURCE_DIR> token. A bare "bootstrap-vcpkg.bat" / "vcpkg" is not
+    # resolved by CMake's command launcher (it does not search the step's
+    # working directory the way an interactive shell does), which fails the
+    # populate step with "'bootstrap-vcpkg.bat' is not recognized".
+    UPDATE_COMMAND <SOURCE_DIR>/bootstrap-vcpkg.bat -disableMetrics
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg cfitsio"
-    COMMAND vcpkg install --binarysource=default --no-print-usage cfitsio:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage cfitsio:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg curl[ssl]"
-    COMMAND vcpkg install --binarysource=default --no-print-usage curl[ssl]:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage curl[ssl]:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg eigen3"
-    COMMAND vcpkg install --binarysource=default --no-print-usage eigen3:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage eigen3:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg opencv4"
-    COMMAND vcpkg install --binarysource=default --no-print-usage opencv4:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage opencv4:${WINDOWS_ARCH}-windows
   )
   message(STATUS "Preparing VCPKG")
   FetchContent_MakeAvailable(vcpkg)
