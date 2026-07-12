@@ -1,0 +1,10 @@
+# zizmor (workflow security audit) configuration.
+# Docs: https://docs.zizmor.sh/configuration/
+rules:
+  cache-poisoning:
+    ignore:
+      # The wxWidgets cache in the release workflow is keyed on the pinned wx
+      # version and only holds a static library built from an upstream release
+      # zip; the artifacts we publish are reviewed in a draft release before
+      # anything goes public.
+      - release.yml

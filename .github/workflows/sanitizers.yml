@@ -1,0 +1,91 @@
+name: Sanitizers
+
+# Full sanitizer builds + test runs on arm64. These compile the whole tree,
+# so per the project's CI philosophy they do NOT run on pull requests —
+# they run as a post-merge safety net on main, weekly (to catch flaky
+# concurrency bugs even in quiet weeks), and on demand via the Actions tab.
+#
+#   - asan-ubsan: AddressSanitizer + UndefinedBehaviorSanitizer, single
+#     ctest pass. Catches heap/stack overflows, use-after-free, UB (signed
+#     overflow, bad casts, misaligned access).
+#   - tsan: ThreadSanitizer concurrency stress — ctest repeated to shake
+#     out data races that need unlucky scheduling to manifest.
+on:
+  push:
+    branches: [main]
+  schedule:
+    - cron: '0 6 * * 1'  # Mondays 06:00 UTC
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sanitizers-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sanitize:
+    name: ${{ matrix.name }} (arm64)
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: ASan + UBSan
+            id: asan-ubsan
+            sanitize_flags: -fsanitize=address,undefined -fno-sanitize-recover=all
+            ctest_args: --output-on-failure
+          - name: TSan concurrency stress
+            id: tsan
+            sanitize_flags: -fsanitize=thread
+            # Repeat the suite so races that depend on scheduling luck get
+            # multiple chances to trip the sanitizer.
+            ctest_args: --output-on-failure --repeat until-fail:5
+    # Native arm64 runner: exercises the same architecture the Raspberry Pi
+    # builds ship on, where weaker memory ordering surfaces races that x86's
+    # stronger model can hide.
+    runs-on: ubuntu-24.04-arm
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Same dependency set as build.yml.
+      - name: Install build dependencies
+        run: |
+          sudo add-apt-repository -y ppa:mutlaqja/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential cmake pkg-config gettext \
+            libwxgtk3.2-dev wx-common libcfitsio-dev libnova-dev libindi-dev \
+            libopencv-dev libeigen3-dev libv4l-dev libcurl4-gnutls-dev \
+            libgtest-dev zlib1g-dev libx11-dev
+
+      - name: Configure (${{ matrix.id }})
+        env:
+          SANITIZE_FLAGS: ${{ matrix.sanitize_flags }}
+        run: |
+          cmake -S . -B build \
+            -Wno-dev \
+            -DCMAKE_BUILD_TYPE=RelWithDebInfo \
+            -DCMAKE_CXX_FLAGS="$SANITIZE_FLAGS -fno-omit-frame-pointer" \
+            -DCMAKE_C_FLAGS="$SANITIZE_FLAGS -fno-omit-frame-pointer" \
+            -DCMAKE_EXE_LINKER_FLAGS="$SANITIZE_FLAGS" \
+            -DUSE_SYSTEM_LIBINDI=1 \
+            -DUSE_SYSTEM_GTEST=1 \
+            -DOPENSOURCE_ONLY=1
+
+      - name: Build
+        # Same parallelism cap as build.yml: the gaussian_process/Eigen
+        # translation units are memory-heavy, and sanitizer instrumentation
+        # inflates compiler memory use further.
+        run: cmake --build build --parallel 2
+
+      - name: Test
+        working-directory: build
+        env:
+          ASAN_OPTIONS: halt_on_error=1:strict_string_checks=1:detect_stack_use_after_return=1
+          UBSAN_OPTIONS: print_stacktrace=1:halt_on_error=1
+          TSAN_OPTIONS: halt_on_error=1:second_deadlock_stack=1
+        run: ctest ${{ matrix.ctest_args }}
