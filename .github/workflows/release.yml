@@ -1,0 +1,229 @@
+name: Release
+
+# Builds all four release installers and attaches them to a DRAFT GitHub
+# Release. This workflow only runs when explicitly kicked off:
+#   - manually from the Actions tab ("Run workflow" button), or
+#   - by pushing a version tag (v1.2.3), which pairs with /release.
+# Nothing is published automatically: the job creates (or updates) a draft
+# release, and a human reviews the artifacts and notes before publishing it
+# from the Releases page.
+#
+# Targets and their packaging scripts:
+#   - Debian amd64  -> build-deb.sh on ubuntu-24.04
+#   - Debian arm64  -> build-deb.sh on ubuntu-24.04-arm (native ARM runner)
+#   - Windows x64   -> build-exe.ps1 on windows-latest (Inno Setup installer)
+#   - macOS arm64   -> build-dmg.sh on macos-26 (self-contained DMG, unsigned)
+#
+# The version comes from version.md (the project's single source of truth);
+# every packaging script reads it itself, and the draft-release job reads it
+# again to name the release/tag.
+on:
+  workflow_dispatch:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# Never cancel a half-finished release build; queue instead.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  linux-deb:
+    name: Debian package (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Same dependency set as build.yml plus the Debian packaging tools.
+      # The INDI PPA supplies libindi 2.x for both amd64 and arm64 (Launchpad
+      # builds both); if it were ever missing, debian/rules falls back to
+      # building INDI 2.2.1.1 from source automatically.
+      - name: Install build dependencies
+        run: |
+          sudo add-apt-repository -y ppa:mutlaqja/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            debhelper \
+            dpkg-dev \
+            gettext \
+            libwxgtk3.2-dev \
+            wx-common \
+            libcfitsio-dev \
+            libnova-dev \
+            libindi-dev \
+            libopencv-dev \
+            libeigen3-dev \
+            libv4l-dev \
+            libcurl4-gnutls-dev \
+            libgtest-dev \
+            zlib1g-dev \
+            libx11-dev
+
+      - name: Build .deb
+        run: ./build-deb.sh
+
+      # build-deb.sh leaves the packages in the checkout's PARENT directory
+      # (dpkg-buildpackage convention). The transitional phd2-alpaca package
+      # is Architecture: all and identical from both matrix legs, so only the
+      # amd64 leg ships it to avoid a duplicate-artifact collision.
+      - name: Collect package
+        run: |
+          mkdir -p dist
+          mv ../openastro-phd2-*-${{ matrix.arch }}.deb dist/
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            mv ../phd2-alpaca-*-all.deb dist/ || true
+          fi
+          ls -la dist/
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64 installer
+    runs-on: windows-latest
+    env:
+      WX_VERSION: 3.2.8
+      WXWIN: C:\wxWidgets
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # build-exe.ps1 requires WXWIN pointing at a static x64 wxWidgets build
+      # (lib\vc_x64_lib). Building it cold takes ~20-40 min, so cache the
+      # result keyed on the wx version; later runs restore it in seconds.
+      # Everything else (cfitsio, curl, eigen3, opencv4, libindi) is handled
+      # by the pinned vcpkg that thirdparty.cmake fetches itself.
+      - name: Cache wxWidgets (static x64)
+        id: wx-cache
+        uses: actions/cache@v4
+        with:
+          path: C:\wxWidgets
+          key: wxwidgets-${{ env.WX_VERSION }}-static-x64-v1
+
+      - name: Build wxWidgets (cache miss only)
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "wx.zip"
+          Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v$env:WX_VERSION/wxWidgets-$env:WX_VERSION.zip" -OutFile $zip
+          # The Windows release zip is rootless: include/, src/, build/ sit at
+          # the archive root, so extracting into WXWIN gives the layout
+          # build-exe.ps1 expects.
+          Expand-Archive $zip -DestinationPath $env:WXWIN
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio with C++ toolchain found" }
+          # Static wx libs (SHARED=0 default), dynamic CRT (/MD) to match the
+          # vcpkg x64-windows triplet the rest of the build links against.
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && cd /d $env:WXWIN\build\msw && nmake /f makefile.vc BUILD=release TARGET_CPU=X64"
+          if ($LASTEXITCODE -ne 0) { throw "wxWidgets build failed" }
+
+      # Inno Setup 6 is preinstalled on GitHub's Windows images at the
+      # default location build-exe.ps1 searches.
+      - name: Build installer
+        shell: pwsh
+        run: ./build-exe.ps1
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: windows-x64
+          path: tmp/openastro-phd2-*-x64.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS DMG (Apple Silicon)
+    # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if this
+    # image label is unavailable, fall back to macos-15 and export
+    # ALLOW_OLD_MACOS=1 (the script's documented CI override).
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: brew install cmake wxwidgets cfitsio libnova gettext
+
+      # Produces a self-contained (Homebrew dylibs bundled) but UNSIGNED DMG:
+      # users see a Gatekeeper warning until codesign + notarytool steps are
+      # added with an Apple Developer ID certificate in repo secrets.
+      - name: Build DMG
+        run: ./build-dmg.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: macos-arm64
+          path: tmp/openastro-phd2-*-arm64.dmg
+          if-no-files-found: error
+
+  draft-release:
+    name: Draft GitHub release
+    needs: [linux-deb, windows, macos]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/download-artifact@v4
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Tag-triggered runs use the pushed tag; manual runs derive v<version>
+      # from version.md. Either way the release is created as a DRAFT — review
+      # the artifacts and notes on the Releases page, then publish by hand.
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION=$(grep -E '^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9._-]*)[[:space:]]*$' version.md | head -1 | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "Could not read version from version.md" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+          else
+            TAG="v$VERSION"
+          fi
+          echo "Version: $VERSION  Tag: $TAG"
+          ls -la dist/
+          if gh release view "$TAG" > /dev/null 2>&1; then
+            echo "Release $TAG exists; replacing artifacts"
+            gh release upload "$TAG" dist/* --clobber
+          else
+            gh release create "$TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "OpenAstro PHD2 $VERSION" \
+              --generate-notes \
+              dist/*
+          fi
+          echo "Draft release ready: review and publish it from the Releases page."

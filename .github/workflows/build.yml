@@ -1,14 +1,20 @@
 name: Build and Test
 
-# Baseline CI: configure, build, and run the test suite on a Debian/Ubuntu
-# runner. It installs libindi 2.x from the official INDI PPA (Ubuntu's own
-# universe still ships 1.9.9, below the required 2.0) rather than the
-# from-source INDI path in run_deb.sh, and builds open-source-only (no
-# proprietary camera SDKs).
+# Post-merge build safety net: configure, build, and run the test suite on a
+# Debian/Ubuntu runner. It installs libindi 2.x from the official INDI PPA
+# (Ubuntu's own universe still ships 1.9.9, below the required 2.0) rather
+# than the from-source INDI path in run_deb.sh, and builds open-source-only
+# (no proprietary camera SDKs).
+#
+# Deliberately NOT run on pull requests: the full compile takes long enough
+# that it slowed PR iteration, so PRs get the fast checks only (clang-format,
+# Claude review) and the compile runs after merge to main. A build-breaking
+# merge is caught here and can be reverted or fixed forward. workflow_dispatch
+# lets you run it on any branch by hand when a PR looks build-risky.
 on:
   push:
     branches: [main]
-  pull_request:
+  workflow_dispatch:
 
 # Cancel superseded runs on the same ref to save runner minutes.
 concurrency:
