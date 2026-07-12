@@ -53,8 +53,9 @@ jobs:
             -DOPENSOURCE_ONLY=1
 
       # Scope to the lines this PR changed so pre-existing findings elsewhere
-      # never fail the PR. Check set is deliberately conservative (bugprone +
-      # performance); broaden once the codebase is clean under these.
+      # never fail the PR. Check set: bugprone + performance, plus the Clang
+      # Static Analyzer (clang-analyzer-*) for path-sensitive analysis —
+      # deeper than the lint checks, still bounded by the diff size.
       - name: Run clang-tidy on changed lines
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -64,8 +65,8 @@ jobs:
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | clang-tidy-diff-18.py -p1 -path build -quiet \
-                -checks='-*,bugprone-*,performance-*,-bugprone-easily-swappable-parameters' \
-                -warnings-as-errors='bugprone-*,performance-*'
+                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters' \
+                -warnings-as-errors='bugprone-*,performance-*,clang-analyzer-*'
 
   cppcheck:
     name: cppcheck (changed files)
