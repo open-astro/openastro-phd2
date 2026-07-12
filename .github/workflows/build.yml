@@ -34,7 +34,10 @@ jobs:
       - name: Install build dependencies
         run: |
           # Ubuntu's universe ships libindi 1.9.9, but the project requires
-          # INDI >= 2.0. The official INDI PPA provides current libindi 2.x.
+          # INDI >= 2.0. The official INDI PPA (maintained by the INDI project
+          # lead) provides current libindi 2.x. Trust boundary: this adds a
+          # third-party apt source to the CI runner; it only supplies libindi
+          # dev packages used at build time, not runtime artifacts we ship.
           sudo add-apt-repository -y ppa:mutlaqja/ppa
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \

@@ -4105,7 +4105,6 @@ static void set_variable_delay_settings(JObj& response, const json_value *params
         response << jrpc_error(JSONRPC_INVALID_PARAMS, "delay seconds must be non-negative");
         return;
     }
-    VarDelayCfg currParams;
     pFrame->SetVariableDelayConfig(enabled, (int) (shortDelaySec * 1000), (int) (longDelaySec * 1000));
     response << jrpc_result(0);
 }

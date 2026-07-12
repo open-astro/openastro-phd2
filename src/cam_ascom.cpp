@@ -573,7 +573,9 @@ bool CameraASCOM::Connect(const wxString& camId)
     // Any failure after this point must undo whatever connection/registration
     // state we've established so a failed connect doesn't leave the driver live.
     // Mirrors the cleanup done in Disconnect(). Safe to call before Connected was
-    // set (the null-guard / Unregister no-op handle the not-yet-registered case).
+    // set: the GITObjRef null-guard handles the not-yet-connected driver, and the
+    // Unregister is gated on IsRegistered() so an early failure (before the GIT
+    // entry exists) is a genuine no-op.
     auto failConnected = [this](const wxString& msg) -> bool
     {
         {
@@ -581,7 +583,8 @@ bool CameraASCOM::Connect(const wxString& camId)
             if (cam.IDisp())
                 cam.PutProp(L"Connected", false);
         }
-        m_gitEntry.Unregister();
+        if (m_gitEntry.IsRegistered())
+            m_gitEntry.Unregister();
         return CamConnectFailed(msg);
     };
 
