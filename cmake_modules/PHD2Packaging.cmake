@@ -91,7 +91,7 @@ if(UNIX AND NOT APPLE)
 
   # Make Debian package
   set(CPACK_GENERATOR "DEB")
-  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "PHD2 team https://github.com/OpenPHDGuiding/phd2")
+  set(CPACK_DEBIAN_PACKAGE_MAINTAINER "OpenAstro <support@openastro.net>")
   # get package information
   if (CMAKE_SYSTEM_PROCESSOR MATCHES "^arm(.*)")
     set(debarch "armhf")

@@ -126,11 +126,6 @@ EVT_MENU(MENU_IMPORTCAMCAL, MyFrame::OnImportCamCal)
 
 EVT_CHAR_HOOK(MyFrame::OnCharHook)
 
-#if defined (V4L_CAMERA)
-EVT_MENU(MENU_V4LSAVESETTINGS, MyFrame::OnSaveSettings)
-EVT_MENU(MENU_V4LRESTORESETTINGS, MyFrame::OnRestoreSettings)
-#endif
-
 EVT_MENU(MENU_TOOLBAR, MyFrame::OnToolBar)
 EVT_MENU(MENU_GRAPH, MyFrame::OnGraph)
 EVT_MENU(MENU_STATS, MyFrame::OnStats)
@@ -543,13 +538,6 @@ void MyFrame::SetupMenuBar()
     m_useDefectMapMenuItem =
         darks_menu->AppendCheckItem(MENU_LOADDEFECTMAP, _("Use &Bad-pixel Map"), _("Use the bad-pixel map for this profile"));
 
-#if defined(V4L_CAMERA)
-    wxMenu *v4l_menu = new wxMenu();
-
-    v4l_menu->Append(MENU_V4LSAVESETTINGS, _("&Save settings"), _("Save current camera settings"));
-    v4l_menu->Append(MENU_V4LRESTORESETTINGS, _("&Restore settings"), _("Restore camera settings"));
-#endif
-
     bookmarks_menu = new wxMenu();
     m_showBookmarksMenuItem =
         bookmarks_menu->AppendCheckItem(MENU_BOOKMARKS_SHOW, _("Show &Bookmarks\tb"), _("Hide or show bookmarks"));
@@ -573,13 +561,6 @@ void MyFrame::SetupMenuBar()
     Menubar = new wxMenuBar();
     Menubar->Append(file_menu, _("&File"));
     Menubar->Append(guide_menu, _("&Guide"));
-
-#if defined(V4L_CAMERA)
-    Menubar->Append(v4l_menu, _T("&V4L"));
-
-    Menubar->Enable(MENU_V4LSAVESETTINGS, false);
-    Menubar->Enable(MENU_V4LRESTORESETTINGS, false);
-#endif
 
     Menubar->Append(tools_menu, _("&Tools"));
     Menubar->Append(view_menu, _("&View"));

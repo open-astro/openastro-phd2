@@ -38,10 +38,6 @@
 #if defined(__WINDOWS__)
 
 # define GUIDE_ASCOM
-# ifdef HAVE_SHOESTRING
-#  define GUIDE_GPUSB
-#  define GUIDE_GPINT
-# endif
 # define GUIDE_ALPACA
 # define GUIDE_INDI
 
@@ -59,12 +55,6 @@
 
 #include "scope.h"
 #include "scope_ascom.h"
-#include "scope_gpusb.h"
-#include "scope_gpint.h"
-#include "scope_voyager.h"
-#include "scope_equinox.h"
-#include "scope_eqmac.h"
-#include "scope_GC_USBST4.h"
 #include "scope_alpaca.h"
 #include "scope_manual_pointing.h"
 #ifdef GUIDE_INDI

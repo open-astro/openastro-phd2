@@ -56,7 +56,14 @@ Source: Release\libcurl.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\zlib1.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\liblzma.dll; DestDir: {app}; Flags: replacesameversion
 ; Visual C++ runtime (VS 2022 / VC 14.x; the legacy msvcr120.dll from
-; the VS 2013 era is no longer produced and is intentionally absent)
+; the VS 2013 era is no longer produced and is intentionally absent).
+; MAINTENANCE: these DLLs are the app-local copies vendored under
+; WinLibs\x64\ (see thirdparty.cmake PHD_COPY_EXTERNAL_ALL). They can lag
+; the compiler's CRT when the MSVC toolchain is updated. Whenever you bump
+; the Visual Studio / Build Tools version, refresh WinLibs\x64\*.dll from the
+; matching installed VC++ Redistributable, typically:
+;   C:\Program Files\Microsoft Visual Studio\2022\<edition>\VC\Redist\MSVC\<ver>\x64\
+; so the shipped runtime matches the one phd2.exe was linked against.
 Source: Release\msvcp140.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\vcomp140.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\vcruntime140.dll; DestDir: {app}; Flags: replacesameversion

@@ -21,9 +21,10 @@ cmake --build . --target test_json_parser
 ```
 
 To turn the test build off entirely (for example, for a packaging build that
-doesn't need them), configure with `-DBUILD_TESTING=OFF`. The setup also
-honours `-DPHD_BUILD_TESTS=ON` if `BUILD_TESTING` is unavailable for some
-reason.
+doesn't need them), configure with either `-DBUILD_TESTING=OFF` or the fork's
+own `-DPHD_BUILD_TESTS=OFF` — both disable the test build. `PHD_BUILD_TESTS`
+(referenced in the CHANGELOG) is honoured even when `BUILD_TESTING` is
+unavailable for some reason.
 
 GTest is fetched automatically via `FetchContent` (pinned to v1.17.0 in
 `thirdparty/thirdparty.cmake`). No system gtest install is needed.

@@ -173,7 +173,7 @@ wxString AlpacaClient::AppendClientInfo(const wxString& url, const wxString& par
     return full;
 }
 
-bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *errorCode)
+bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *errorCode, std::string *rawResponse)
 {
     if (!m_curl)
     {
@@ -256,6 +256,8 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
     }
 
     std::string responseStr = m_response.str();
+    if (rawResponse)
+        *rawResponse = responseStr;
 
     // For curl error 18 (partial file), we might still have received a complete JSON response
     // Check if we got any data and try to parse it
@@ -512,7 +514,8 @@ bool AlpacaClient::GetRaw(const wxString& endpoint, const wxString& acceptHeader
     return true;
 }
 
-bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonParser& parser, long *errorCode)
+bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonParser& parser, long *errorCode,
+                       std::string *rawResponse)
 {
     if (!m_curl)
     {
@@ -613,6 +616,8 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
     if (httpCode != 200)
     {
         std::string responseStr = m_response.str();
+        if (rawResponse)
+            *rawResponse = responseStr;
         Debug.Write(wxString::Format("AlpacaClient PUT returned HTTP %ld, response: %s\n", httpCode,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         return false;
@@ -623,6 +628,8 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
     wxMilliSleep(100);
 
     std::string responseStr = m_response.str();
+    if (rawResponse)
+        *rawResponse = responseStr;
     if (!parser.Parse(responseStr))
     {
         Debug.Write(wxString::Format("AlpacaClient: JSON parse error: %s\n", parser.ErrorDesc()));
@@ -649,9 +656,9 @@ bool AlpacaClient::GetDouble(const wxString& endpoint, double *value, long *erro
 {
     JsonParser parser;
     long httpCode = 0;
-    if (!Get(endpoint, parser, &httpCode))
+    std::string responseStr;
+    if (!Get(endpoint, parser, &httpCode, &responseStr))
     {
-        std::string responseStr = m_response.str();
         Debug.Write(wxString::Format("AlpacaClient GetDouble: Get() failed for %s, HTTP %ld, response: %s\n", endpoint,
                                      httpCode, wxString(responseStr.c_str(), wxConvUTF8)));
         if (errorCode)
@@ -664,7 +671,6 @@ bool AlpacaClient::GetDouble(const wxString& endpoint, double *value, long *erro
     const json_value *root = parser.Root();
     if (!root || root->type != JSON_OBJECT)
     {
-        std::string responseStr = m_response.str();
         Debug.Write(wxString::Format("AlpacaClient GetDouble: Invalid JSON response for %s: %s\n", endpoint,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         if (errorCode)
@@ -790,7 +796,6 @@ bool AlpacaClient::GetDouble(const wxString& endpoint, double *value, long *erro
     }
 
     // Value field not found or wrong type
-    std::string responseStr = m_response.str();
     Debug.Write(wxString::Format("AlpacaClient GetDouble: 'Value' field not found or wrong type in response for %s: %s\n",
                                  endpoint, wxString(responseStr.c_str(), wxConvUTF8)));
     if (errorCode)
@@ -804,7 +809,8 @@ bool AlpacaClient::GetInt(const wxString& endpoint, int *value, long *errorCode)
 {
     JsonParser parser;
     long httpCode = 0;
-    if (!Get(endpoint, parser, &httpCode))
+    std::string responseStr;
+    if (!Get(endpoint, parser, &httpCode, &responseStr))
     {
         if (errorCode)
         {
@@ -816,7 +822,6 @@ bool AlpacaClient::GetInt(const wxString& endpoint, int *value, long *errorCode)
     const json_value *root = parser.Root();
     if (!root || root->type != JSON_OBJECT)
     {
-        std::string responseStr = m_response.str();
         Debug.Write(wxString::Format("AlpacaClient GetInt: Invalid JSON response for %s: %s\n", endpoint,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         if (errorCode)
@@ -943,7 +948,6 @@ bool AlpacaClient::GetInt(const wxString& endpoint, int *value, long *errorCode)
     }
 
     // Value field not found or wrong type
-    std::string responseStr = m_response.str();
     Debug.Write(wxString::Format("AlpacaClient GetInt: 'Value' field not found or wrong type in response for %s: %s\n",
                                  endpoint, wxString(responseStr.c_str(), wxConvUTF8)));
     if (errorCode)
@@ -957,7 +961,8 @@ bool AlpacaClient::GetBool(const wxString& endpoint, bool *value, long *errorCod
 {
     JsonParser parser;
     long httpCode = 0;
-    if (!Get(endpoint, parser, &httpCode))
+    std::string responseStr;
+    if (!Get(endpoint, parser, &httpCode, &responseStr))
     {
         if (errorCode)
         {
@@ -969,7 +974,6 @@ bool AlpacaClient::GetBool(const wxString& endpoint, bool *value, long *errorCod
     const json_value *root = parser.Root();
     if (!root || root->type != JSON_OBJECT)
     {
-        std::string responseStr = m_response.str();
         Debug.Write(wxString::Format("AlpacaClient GetBool: Invalid JSON response for %s: %s\n", endpoint,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         if (errorCode)
@@ -1044,7 +1048,6 @@ bool AlpacaClient::GetBool(const wxString& endpoint, bool *value, long *errorCod
     }
 
     // Value field not found or wrong type
-    std::string responseStr = m_response.str();
     Debug.Write(wxString::Format("AlpacaClient GetBool: 'Value' field not found or wrong type in response for %s: %s\n",
                                  endpoint, wxString(responseStr.c_str(), wxConvUTF8)));
     if (errorCode)
@@ -1063,7 +1066,8 @@ bool AlpacaClient::GetString(const wxString& endpoint, wxString *value, long *er
 
     JsonParser parser;
     long httpCode = 0;
-    if (!Get(endpoint, parser, &httpCode))
+    std::string responseStr;
+    if (!Get(endpoint, parser, &httpCode, &responseStr))
     {
         if (errorCode)
         {
@@ -1075,7 +1079,6 @@ bool AlpacaClient::GetString(const wxString& endpoint, wxString *value, long *er
     const json_value *root = parser.Root();
     if (!root || root->type != JSON_OBJECT)
     {
-        std::string responseStr = m_response.str();
         Debug.Write(wxString::Format("AlpacaClient GetString: Invalid JSON response for %s: %s\n", endpoint,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         if (errorCode)
@@ -1179,7 +1182,6 @@ bool AlpacaClient::GetString(const wxString& endpoint, wxString *value, long *er
         }
     }
 
-    std::string responseStr = m_response.str();
     Debug.Write(wxString::Format("AlpacaClient GetString: 'Value' field not found or wrong type in response for %s: %s\n",
                                  endpoint, wxString(responseStr.c_str(), wxConvUTF8)));
     if (errorCode)

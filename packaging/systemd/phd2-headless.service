@@ -1,16 +1,22 @@
+# NOTE: For the Debian/.deb package, debian/openastro-phd2.service is the
+# canonical unit that actually gets installed and enabled. This file is a
+# generic template kept in sync with it for manual/non-Debian installs.
+# Keep the user, group, paths, and binary name aligned with that unit.
 [Unit]
-Description=PHD2 Headless (JSON-RPC server)
+Description=OpenAstro PHD2 Headless Guiding Server (JSON-RPC server)
+Documentation=https://github.com/open-astro/openastro-phd2
 After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=phd2
-Group=phd2
-WorkingDirectory=/var/lib/phd2
-# Current implementation runs wx-based core without showing the main window.
-# On Linux without a desktop session, run under Xvfb.
-ExecStart=/usr/bin/xvfb-run -a /usr/bin/phd2.bin --headless --headless-auto-connect
+User=openastro-phd2
+Group=openastro-phd2
+WorkingDirectory=/var/lib/openastro-phd2
+Environment=LD_LIBRARY_PATH=/usr/lib/openastro-phd2
+# Current implementation runs the wx-based core without showing the main
+# window. On Linux without a desktop session, run under Xvfb.
+ExecStart=/usr/bin/xvfb-run -a /usr/bin/openastro-phd2 --headless --headless-auto-connect
 Restart=on-failure
 RestartSec=3
 

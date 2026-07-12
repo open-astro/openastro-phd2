@@ -1,5 +1,5 @@
 @echo off
-setlocal
+setlocal enabledelayedexpansion
 
 rem =======================================================================
 rem  run_exe.bat - Configure and build PHD2 on Windows
@@ -73,8 +73,12 @@ if exist tmp (
 )
 
 if exist tmp (
-    set "STAMP=%RANDOM%%RANDOM%"
-    move tmp tmp_locked_%STAMP% >nul 2>&1
+    rem  Delayed expansion (!VAR!) is required here: %STAMP% would be expanded
+    rem  once at parse time -- before the SET runs -- so every locked run would
+    rem  collide on the literal name "tmp_locked_". !STAMP! expands at execution
+    rem  time, giving each run a unique target and a truthful message.
+    set "STAMP=!RANDOM!!RANDOM!"
+    move tmp tmp_locked_!STAMP! >nul 2>&1
     if errorlevel 1 (
         echo.
         echo ERROR: Could not delete or rename tmp\.
@@ -86,7 +90,7 @@ if exist tmp (
         echo Handles on the CPU tab, then close the offending process.
         exit /b 1
     )
-    echo Locked tmp\ has been renamed to tmp_locked_%STAMP%\
+    echo Locked tmp\ has been renamed to tmp_locked_!STAMP!\
     echo ^(Delete it manually later when nothing holds it.^)
 )
 
@@ -94,8 +98,17 @@ mkdir tmp
 
 rem -----------------------------------------------------------------------
 rem  Pre-clone vcpkg with visible progress. CMake's FetchContent normally
-rem  does this clone silently inside an MSBuild custom-build step.
+rem  does this clone silently inside an MSBuild custom-build step, but a
+rem  visible ~500MB download beats a stalled-looking build.
+rem
+rem  IMPORTANT: because we pre-populate tmp\_deps\vcpkg-src, FetchContent
+rem  finds the directory already there and SKIPS its own clone+checkout of
+rem  the pinned GIT_TAG. So we MUST check out that exact commit here, or the
+rem  build silently runs against vcpkg HEAD. Keep VCPKG_PIN in lockstep with
+rem  the GIT_TAG in thirdparty\thirdparty.cmake (currently 2026.03.18).
 rem -----------------------------------------------------------------------
+set "VCPKG_PIN=c3867e714dd3a51c272826eea77267876517ed99"
+
 where git >nul 2>&1
 if errorlevel 1 (
     echo ERROR: git is required but not on PATH.
@@ -109,6 +122,15 @@ git clone --progress https://github.com/microsoft/vcpkg.git tmp\_deps\vcpkg-src
 if errorlevel 1 (
     echo.
     echo ERROR: vcpkg clone failed. Check network/proxy settings.
+    exit /b 1
+)
+
+echo Checking out pinned vcpkg commit %VCPKG_PIN%...
+git -C tmp\_deps\vcpkg-src checkout --quiet %VCPKG_PIN%
+if errorlevel 1 (
+    echo.
+    echo ERROR: could not check out pinned vcpkg commit %VCPKG_PIN%.
+    echo Verify VCPKG_PIN matches the GIT_TAG in thirdparty\thirdparty.cmake.
     exit /b 1
 )
 

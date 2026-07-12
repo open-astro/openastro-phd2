@@ -1,5 +1,10 @@
 # PHD2 Headless Playbook — `openastro-guider`
 
+> **Note:** This document is the plan for the **separate**
+> `open-astro/openastro-guider` project (a Linux-only, headless, Alpaca-only
+> downstream fork). It is kept here as reference/tracking material only and is
+> **not** the roadmap for this `openastro-phd2` repo.
+
 Authoritative plan for turning the inherited PHD2 codebase (`openastro-phd2` fork) into
 **`openastro-guider`**: a Linux-only, headless, Alpaca-only guiding daemon that OpenAstro
 ARA drives entirely over PHD2's API. This document is to `openastro-guider` what

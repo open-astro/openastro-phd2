@@ -212,6 +212,8 @@ bool RotatorAscom::Disconnect(void)
         Debug.AddLine(ExcepMsg("ASCOM disconnect", rot.Excep()));
     }
 
+    m_impl->m_gitEntry.Unregister();
+
     Rotator::Disconnect();
     return false;
 }
@@ -238,6 +240,11 @@ wxString RotatorAscom::Name(void) const
 float RotatorAscom::Position(void) const
 {
     GITObjRef rot(m_impl->m_gitEntry);
+    if (!rot.IDisp())
+    {
+        Debug.AddLine("ASCOM rotator: cannot get position, driver not registered/connected");
+        return 0.f;
+    }
 
     Variant vRes;
     if (!rot.GetProp(&vRes, L"Position"))

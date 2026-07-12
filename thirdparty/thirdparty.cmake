@@ -85,15 +85,20 @@ if(WIN32)
     GIT_REPOSITORY https://github.com/microsoft/vcpkg.git
     # vcpkg release tag: 2026.03.18
     GIT_TAG c3867e714dd3a51c272826eea77267876517ed99
-    UPDATE_COMMAND bootstrap-vcpkg.bat -disableMetrics
+    # Invoke the bootstrap script and vcpkg by absolute path via the
+    # <SOURCE_DIR> token. A bare "bootstrap-vcpkg.bat" / "vcpkg" is not
+    # resolved by CMake's command launcher (it does not search the step's
+    # working directory the way an interactive shell does), which fails the
+    # populate step with "'bootstrap-vcpkg.bat' is not recognized".
+    UPDATE_COMMAND <SOURCE_DIR>/bootstrap-vcpkg.bat -disableMetrics
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg cfitsio"
-    COMMAND vcpkg install --binarysource=default --no-print-usage cfitsio:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage cfitsio:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg curl[ssl]"
-    COMMAND vcpkg install --binarysource=default --no-print-usage curl[ssl]:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage curl[ssl]:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg eigen3"
-    COMMAND vcpkg install --binarysource=default --no-print-usage eigen3:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage eigen3:${WINDOWS_ARCH}-windows
     COMMAND ${CMAKE_COMMAND} -E echo "Building vcpkg opencv4"
-    COMMAND vcpkg install --binarysource=default --no-print-usage opencv4:${WINDOWS_ARCH}-windows
+    COMMAND <SOURCE_DIR>/vcpkg install --binarysource=default --no-print-usage opencv4:${WINDOWS_ARCH}-windows
   )
   message(STATUS "Preparing VCPKG")
   FetchContent_MakeAvailable(vcpkg)
@@ -220,6 +225,11 @@ else()
     FetchContent_Declare(
       googletest
       URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
+      # Integrity pin for the exact v1.17.0 archive above. Without URL_HASH,
+      # FetchContent accepts whatever bytes the URL returns, so a compromised
+      # or corrupted download would be built silently. Verify with:
+      #   curl -L https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz | sha256sum
+      URL_HASH SHA256=65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c
   )
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -269,7 +279,7 @@ elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
                   OUTPUT_VARIABLE wxWidgets_LIBRARIES
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
   separate_arguments(${wxWidgets_LIBRARIES})
-  execute_process(COMMAND ${wxWidgets_CONFIG_EXECUTABLE} --cflags ${wxRwxRequiredLibs}
+  execute_process(COMMAND ${wxWidgets_CONFIG_EXECUTABLE} --cflags ${wxRequiredLibs}
                   OUTPUT_VARIABLE wxWidgets_CXXFLAGS
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
   separate_arguments(wxWidgets_CXX_FLAGS UNIX_COMMAND "${wxWidgets_CXXFLAGS}")

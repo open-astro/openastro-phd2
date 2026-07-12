@@ -3098,6 +3098,11 @@ static bool capture_master_dark_frame(usImage& darkFrame, int expTimeMs, int fra
 
         if (avgimg.empty())
             avgimg.resize(darkFrame.NPixels, 0);
+        else if (darkFrame.NPixels != avgimg.size())
+        {
+            *error = wxString::Format("dark frame %d/%d size changed during accumulation", j, frameCount);
+            return true;
+        }
         for (unsigned int i = 0; i < darkFrame.NPixels; i++)
             avgimg[i] += darkFrame.ImageData[i];
     }
@@ -3465,6 +3470,7 @@ static void capture_single_frame(JObj& response, const json_value *params)
     if (!pCamera || !pCamera->Connected)
     {
         response << jrpc_error(1, "cannot capture single frame when camera is not connected");
+        return;
     }
 
     Params p("exposure", "binning", "gain", "subframe", "path", "save", params);
@@ -3962,13 +3968,18 @@ static void get_algo_param(JObj& response, const json_value *params)
     double val;
     if (pMount)
     {
+        // can be null before a guide algorithm is configured (e.g. an AO
+        // mount axis with no algorithm assigned)
         GuideAlgorithm *alg = a == GUIDE_X ? pMount->GetXGuideAlgorithm() : pMount->GetYGuideAlgorithm();
-        if (strcmp(name->string_value, "algorithmName") == 0)
+        if (alg)
         {
-            response << jrpc_result(alg->GetGuideAlgorithmClassName());
-            return;
+            if (strcmp(name->string_value, "algorithmName") == 0)
+            {
+                response << jrpc_result(alg->GetGuideAlgorithmClassName());
+                return;
+            }
+            ok = alg->GetParam(name->string_value, &val);
         }
-        ok = alg->GetParam(name->string_value, &val);
     }
     if (ok)
         response << jrpc_result(val);
@@ -3992,6 +4003,11 @@ static void set_algo_param(JObj& response, const json_value *params)
         return;
     }
     const json_value *val = p.param("value");
+    if (!val)
+    {
+        response << jrpc_error(JSONRPC_INVALID_PARAMS, "expected param value param");
+        return;
+    }
     double v;
     if (!float_param(val, &v))
     {
@@ -4001,8 +4017,11 @@ static void set_algo_param(JObj& response, const json_value *params)
     bool ok = false;
     if (pMount)
     {
+        // can be null before a guide algorithm is configured (e.g. an AO
+        // mount axis with no algorithm assigned)
         GuideAlgorithm *alg = a == GUIDE_X ? pMount->GetXGuideAlgorithm() : pMount->GetYGuideAlgorithm();
-        ok = alg->SetParam(name->string_value, v);
+        if (alg)
+            ok = alg->SetParam(name->string_value, v);
     }
     if (ok)
     {
@@ -4089,8 +4108,19 @@ static void set_variable_delay_settings(JObj& response, const json_value *params
         response << jrpc_error(JSONRPC_INVALID_PARAMS, "expected Enabled, ShortDelaySeconds, LongDelaySeconds params)");
         return;
     }
-    VarDelayCfg currParams;
-    pFrame->SetVariableDelayConfig(enabled, (int) shortDelaySec * 1000, (int) longDelaySec * 1000);
+    // Upper bound keeps (int)(sec * 1000) well inside int range — the cast
+    // would be undefined behavior on overflow. One hour is far above any
+    // useful dither settle delay.
+    enum
+    {
+        MAX_DELAY_SEC = 3600
+    };
+    if (shortDelaySec < 0.0 || longDelaySec < 0.0 || shortDelaySec > MAX_DELAY_SEC || longDelaySec > MAX_DELAY_SEC)
+    {
+        response << jrpc_error(JSONRPC_INVALID_PARAMS, "delay seconds must be in the range 0..3600");
+        return;
+    }
+    pFrame->SetVariableDelayConfig(enabled, (int) (shortDelaySec * 1000), (int) (longDelaySec * 1000));
     response << jrpc_result(0);
 }
 
@@ -4853,35 +4883,108 @@ static std::string lower_ascii(const std::string& s)
     return t;
 }
 
+// Strict UTF-8 validity check (rejects overlong encodings, surrogates, and
+// code points above U+10FFFF). Used by url_decode to pick a decode path
+// deterministically: wxString::FromUTF8's behavior on invalid input differs
+// between wx builds (empty string on strict builds, U+FFFD substitution on
+// lenient ones), so we must not rely on it to detect invalid input.
+static bool valid_utf8(const std::string& s)
+{
+    size_t i = 0;
+    while (i < s.size())
+    {
+        unsigned char c = s[i];
+        size_t cont;
+        if (c < 0x80)
+            cont = 0;
+        else if ((c & 0xE0) == 0xC0)
+        {
+            if (c < 0xC2) // overlong 2-byte
+                return false;
+            cont = 1;
+        }
+        else if ((c & 0xF0) == 0xE0)
+            cont = 2;
+        else if ((c & 0xF8) == 0xF0)
+        {
+            if (c > 0xF4) // above U+10FFFF
+                return false;
+            cont = 3;
+        }
+        else
+            return false;
+        if (i + cont >= s.size())
+            return false;
+        for (size_t j = 1; j <= cont; j++)
+            if (((unsigned char) s[i + j] & 0xC0) != 0x80)
+                return false;
+        if (cont == 2)
+        {
+            unsigned char c1 = s[i + 1];
+            if (c == 0xE0 && c1 < 0xA0) // overlong 3-byte
+                return false;
+            if (c == 0xED && c1 > 0x9F) // UTF-16 surrogate range
+                return false;
+        }
+        else if (cont == 3)
+        {
+            unsigned char c1 = s[i + 1];
+            if (c == 0xF0 && c1 < 0x90) // overlong 4-byte
+                return false;
+            if (c == 0xF4 && c1 > 0x8F) // above U+10FFFF
+                return false;
+        }
+        i += cont + 1;
+    }
+    return true;
+}
+
 static wxString url_decode(const std::string& s)
 {
-    wxString out;
+    auto hex_val = [](char c) -> int
+    {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+
+    std::string bytes;
     for (size_t i = 0; i < s.size(); i++)
     {
         char c = s[i];
         if (c == '+')
         {
-            out << ' ';
+            bytes += ' ';
         }
-        else if (c == '%' && i + 2 < s.size())
+        else if (c == '%' && i + 2 < s.size() && hex_val(s[i + 1]) >= 0 && hex_val(s[i + 2]) >= 0)
         {
-            unsigned int v = 0;
-            if (sscanf(s.substr(i + 1, 2).c_str(), "%02x", &v) == 1)
-            {
-                out << (wxChar) v;
-                i += 2;
-            }
-            else
-            {
-                out << c;
-            }
+            bytes += (char) ((hex_val(s[i + 1]) << 4) | hex_val(s[i + 2]));
+            i += 2;
         }
         else
         {
-            out << c;
+            // A malformed % sequence (non-hex digits or truncated) is passed
+            // through as-is, one character at a time: '%' here, then the
+            // following characters on subsequent iterations — matching the
+            // RFC 3986 lenient practice of leaving invalid escapes literal.
+            bytes += c;
         }
     }
-    return out;
+    // Pick the decode path with our own validity check rather than probing
+    // FromUTF8's build-dependent failure behavior (see valid_utf8 above).
+    if (valid_utf8(bytes))
+        return wxString::FromUTF8(bytes.c_str(), bytes.size());
+
+    // Invalid UTF-8 (e.g. a lone %80 or truncated multi-byte escape): fall
+    // back to a lossless 8-bit interpretation rather than silently swallowing
+    // or mangling the value.
+    Debug.Write(wxString::Format("url_decode: invalid UTF-8 in \"%s\", falling back to 8-bit decode\n",
+                                 wxString::From8BitData(s.c_str(), s.size())));
+    return wxString::From8BitData(bytes.c_str(), bytes.size());
 }
 
 static std::map<std::string, wxString> parse_query(const std::string& qs)

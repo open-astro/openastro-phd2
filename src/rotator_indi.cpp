@@ -34,6 +34,9 @@
 
 #include "phd.h"
 
+#include <atomic>
+#include <memory>
+
 #ifdef ROTATOR_INDI
 
 # include "rotator_indi.h"
@@ -58,7 +61,7 @@ public:
 private:
     long INDIport;
     wxString INDIhost;
-    volatile bool modal;
+    std::atomic<bool> modal;
     bool m_ready = false;
     float m_angle = POSITION_UNKNOWN;
 
@@ -69,6 +72,11 @@ private:
 
     wxString INDIRotatorName;
     wxString m_Name;
+
+    // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
+    // queued from the INDI client thread that runs after this object is
+    // destroyed becomes a no-op instead of dereferencing a dangling `this`.
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 
     void ClearStatus();
     void CheckState();
@@ -95,6 +103,7 @@ void RotatorINDI::ClearStatus()
     connection_prop = nullptr;
     m_ready = false;
     m_angle = POSITION_UNKNOWN;
+    modal = false;
 }
 
 void RotatorINDI::CheckState()
@@ -131,6 +140,8 @@ RotatorINDI::RotatorINDI() : m_gui(nullptr)
 
 RotatorINDI::~RotatorINDI()
 {
+    *m_alive = false;
+
     if (m_gui)
     {
         IndiGui::DestroyIndiGui(&m_gui);
@@ -199,28 +210,45 @@ bool RotatorINDI::Disconnect()
 
 void RotatorINDI::serverDisconnected(int exit_code)
 {
-    Rotator::Disconnect();
     ClearStatus();
 
-    if (pFrame)
-    {
-        pFrame->UpdateStatsWindowScopePointing();
-    }
-
-    if (exit_code == -1)
-    {
-        if (pFrame)
+    // Called on the INDI client thread; UI updates and Disconnect() (which joins
+    // the INDI worker thread) must hop to the main thread to avoid self-joining.
+    PhdApp::ExecInMainThread(
+        [this, exit_code, alive = m_alive]()
         {
-            pFrame->Alert(wxString(_("INDI server disconnected")));
-        }
-        Disconnect();
-    }
+            if (!*alive)
+                return;
+
+            Rotator::Disconnect();
+
+            if (pFrame)
+            {
+                pFrame->UpdateStatsWindowScopePointing();
+            }
+
+            if (exit_code == -1)
+            {
+                if (pFrame)
+                {
+                    pFrame->Alert(wxString(_("INDI server disconnected")));
+                }
+                Disconnect();
+            }
+        });
 }
 
 void RotatorINDI::removeDevice(INDI::BaseDevice dp)
 {
     ClearStatus();
-    Disconnect();
+    // Called on the INDI client thread; Disconnect() joins the INDI worker thread,
+    // so hop to the main thread to avoid self-joining.
+    PhdApp::ExecInMainThread(
+        [this, alive = m_alive]()
+        {
+            if (*alive)
+                Disconnect();
+        });
 }
 
 void RotatorINDI::ShowPropertyDialog()
@@ -377,8 +405,10 @@ void RotatorINDI::updateProperty(INDI::Property property)
                 {
                     ClearStatus();
                     PhdApp::ExecInMainThread(
-                        [this]()
+                        [this, alive = m_alive]()
                         {
+                            if (!*alive)
+                                return;
                             pFrame->Alert(_("INDI rotator was disconnected"));
                             Disconnect();
                         });

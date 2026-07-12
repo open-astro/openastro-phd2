@@ -355,24 +355,6 @@ wxArrayString Scope::MountList()
     for (unsigned int i = 0; i < ascomScopes.Count(); i++)
         ScopeList.Add(ascomScopes[i]);
 #endif
-#ifdef GUIDE_GPUSB
-    ScopeList.Add(_T("GPUSB"));
-#endif
-#ifdef GUIDE_GPINT
-    ScopeList.Add(_T("GPINT 3BC"));
-    ScopeList.Add(_T("GPINT 378"));
-    ScopeList.Add(_T("GPINT 278"));
-#endif
-#ifdef GUIDE_VOYAGER
-    ScopeList.Add(_T("Voyager"));
-#endif
-#ifdef GUIDE_EQUINOX
-    ScopeList.Add(_T("Equinox 6"));
-    ScopeList.Add(_T("EQMAC"));
-#endif
-#ifdef GUIDE_GCUSBST4
-    ScopeList.Add(_T("GC USB ST4"));
-#endif
 #ifdef GUIDE_INDI
     ScopeList.Add(INDIMountName());
 #endif
@@ -416,37 +398,6 @@ Scope *Scope::Factory(const wxString& choice)
 #endif
         else if (choice == _("None"))
             pReturn = nullptr;
-#ifdef GUIDE_GPUSB
-        else if (choice.Contains(_T("GPUSB")))
-            pReturn = new ScopeGpUsb();
-#endif
-#ifdef GUIDE_GPINT
-        else if (choice.Contains(_T("GPINT 3BC")))
-            pReturn = new ScopeGpInt((short) 0x3BC);
-        else if (choice.Contains(_T("GPINT 378")))
-            pReturn = new ScopeGpInt((short) 0x378);
-        else if (choice.Contains(_T("GPINT 278")))
-            pReturn = new ScopeGpInt((short) 0x278);
-#endif
-#ifdef GUIDE_VOYAGER
-        else if (choice.Contains(_T("Voyager")))
-        {
-            This needs work.We have to move the setting of the IP address into the connect routine ScopeVoyager *pVoyager =
-                new ScopeVoyager();
-        }
-#endif
-#ifdef GUIDE_EQUINOX
-        else if (choice.Contains(_T("Equinox 6")))
-            pReturn = new ScopeEquinox();
-#endif
-#ifdef GUIDE_EQMAC
-        else if (choice.Contains(_T("EQMAC")))
-            pReturn = new ScopeEQMac();
-#endif
-#ifdef GUIDE_GCUSBST4
-        else if (choice.Contains(_T("GC USB ST4")))
-            pReturn = new ScopeGCUSBST4();
-#endif
         else if (choice.Contains(ScopeManualPointing::GetDisplayName()))
             pReturn = new ScopeManualPointing();
         else

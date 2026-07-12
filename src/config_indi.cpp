@@ -213,6 +213,7 @@ void INDIConfig::UpdateControlStates()
 
         if (dev_type == INDI_TYPE_CAMERA)
         {
+            ccd->Clear();
             ccd->Append(_("Main"));
             ccd->Append(_("Secondary"));
             ccd->SetSelection(INDIDevCCD);
@@ -267,6 +268,8 @@ wxEND_EVENT_TABLE();
 
 INDIConfig::~INDIConfig()
 {
+    *m_alive = false;
+
     if (m_gui)
         IndiGui::DestroyIndiGui(&m_gui);
 
@@ -329,11 +332,35 @@ void INDIConfig::OnForceVideoChecked(wxCommandEvent& evt)
 
 void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
 {
+    // Reentrancy guard: the wxYield() loop below pumps the event loop, which
+    // can dispatch a second Discover/Connect click or a dialog close. Re-entering
+    // (or destroying the dialog) mid-scan would corrupt state or free us while we
+    // are still using member controls. Bail if a scan is already in progress.
+    if (m_discovering)
+        return;
+    m_discovering = true;
+    // RAII: reset the flag and re-enable the dialog on every exit path so an
+    // early return or exception can't leave discovery locked out or the
+    // dialog permanently disabled.
+    struct DiscoveryGuard
+    {
+        INDIConfig *dlg;
+        ~DiscoveryGuard()
+        {
+            dlg->m_discovering = false;
+            dlg->discoverButton->Enable(true);
+            dlg->Enable(true);
+        }
+    } guard { this };
+
     Debug.Write("INDIConfig::OnDiscover: scanning local subnets for port 7624\n");
 
     discoverStatus->SetLabel(_("Discovering..."));
     discoverButton->Enable(false);
     serverList->Clear();
+    // Disable the whole dialog while we pump the event loop so Connect/Cancel/close
+    // cannot re-enter and free the dialog out from under this handler.
+    Enable(false);
     // Force the label to repaint before we kick off the scan.
     Update();
     wxYieldIfNeeded();
@@ -380,8 +407,6 @@ void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
             port->SetValue(wxString::Format("%ld", p));
         }
     }
-
-    discoverButton->Enable(true);
 }
 
 void INDIConfig::OnServerSelected(wxCommandEvent& WXUNUSED(evt))
@@ -466,12 +491,21 @@ void INDIConfig::newDevice(INDI::BaseDevice dp)
 
     Debug.Write(wxString::Format("INDIConfig: newDevice %s\n", devname));
 
-    dev->Append(devname);
-    if (devname == INDIDevName)
-    {
-        dev->SetValue(INDIDevName);
-        okBtn->Enable(true);
-    }
+    // newDevice is called on the INDI client thread; wx control mutations must
+    // hop to the main thread (same mechanism serverConnected uses).
+    wxString name(devname);
+    PhdApp::ExecInMainThread(
+        [this, name, alive = m_alive]()
+        {
+            if (!*alive)
+                return;
+            dev->Append(name);
+            if (name == INDIDevName)
+            {
+                dev->SetValue(INDIDevName);
+                okBtn->Enable(true);
+            }
+        });
 }
 
 inline static void _append(wxString& s, const wxString& ap)
@@ -541,16 +575,26 @@ void INDIConfig::newProperty(INDI::Property property)
                                              : dev_type == INDI_TYPE_AO        ? "AO"
                                                                                : "rotator"));
 
-            int n = dev->FindString(devname, true);
-            if (n != wxNOT_FOUND)
-            {
-                dev->Delete(n);
-                // re-select
-                int pos = dev->FindString(INDIDevName, true);
-                dev->SetSelection(pos);
-                if (pos == wxNOT_FOUND)
-                    okBtn->Enable(false);
-            }
+            // newProperty is called on the INDI client thread; wx control
+            // mutations must hop to the main thread (same mechanism
+            // serverConnected uses).
+            wxString name(devname);
+            PhdApp::ExecInMainThread(
+                [this, name, alive = m_alive]()
+                {
+                    if (!*alive)
+                        return;
+                    int n = dev->FindString(name, true);
+                    if (n != wxNOT_FOUND)
+                    {
+                        dev->Delete(n);
+                        // re-select
+                        int pos = dev->FindString(INDIDevName, true);
+                        dev->SetSelection(pos);
+                        if (pos == wxNOT_FOUND)
+                            okBtn->Enable(false);
+                    }
+                });
         }
     }
 }

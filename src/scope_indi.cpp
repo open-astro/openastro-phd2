@@ -36,6 +36,8 @@
  */
 #include "phd.h"
 
+#include <memory>
+
 #ifdef GUIDE_INDI
 
 # include "config_indi.h"
@@ -96,6 +98,15 @@ private:
     bool m_ready;
     bool eod_coord;
 
+    // Reentrancy guard for SlewToCoordinates' wxSafeYield loop; per-instance
+    // so one mount's synchronous slew can't lock out another instance.
+    bool m_slewing = false;
+
+    // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
+    // queued from the INDI client thread that runs after this object is
+    // destroyed becomes a no-op instead of dereferencing a dangling `this`.
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+
     bool ConnectToDriver(RunInBg *ctx);
     void ClearStatus();
     void CheckState();
@@ -150,6 +161,8 @@ ScopeINDI::ScopeINDI() : sync_cond(sync_lock)
 
 ScopeINDI::~ScopeINDI()
 {
+    *m_alive = false;
+
     disconnectServer();
 }
 
@@ -363,8 +376,10 @@ void ScopeINDI::serverDisconnected(int exit_code)
     {
         // This is called on the INDI client thread; UI calls must hop to the main thread.
         PhdApp::ExecInMainThread(
-            [this]()
+            [this, alive = m_alive]()
             {
+                if (!*alive)
+                    return;
                 pFrame->Alert(_("INDI server disconnected"));
                 Disconnect();
             });
@@ -374,7 +389,14 @@ void ScopeINDI::serverDisconnected(int exit_code)
 void ScopeINDI::removeDevice(INDI::BaseDevice dp)
 {
     ClearStatus();
-    Disconnect();
+    // Called on the INDI client thread; Disconnect() joins the INDI worker thread,
+    // so hop to the main thread to avoid self-joining.
+    PhdApp::ExecInMainThread(
+        [this, alive = m_alive]()
+        {
+            if (*alive)
+                Disconnect();
+        });
 }
 
 void ScopeINDI::newDevice(INDI::BaseDevice dp)
@@ -413,8 +435,10 @@ void ScopeINDI::updateProperty(INDI::Property property)
                     // probably the current thread
 
                     PhdApp::ExecInMainThread(
-                        [this]()
+                        [this, alive = m_alive]()
                         {
+                            if (!*alive)
+                                return;
                             pFrame->Alert(_("INDI mount was disconnected"));
                             Connected = false;
                             Disconnect();
@@ -854,6 +878,21 @@ bool ScopeINDI::CanSlewAsync()
 
 bool ScopeINDI::SlewToCoordinates(double ra, double dec)
 {
+    // Reentrancy guard: the wxSafeYield() loop below pumps the event loop, which
+    // can dispatch a second slew request (or other handlers) while we are still
+    // waiting on this one. Bail if a synchronous slew is already in progress.
+    if (m_slewing)
+        return true;
+    // RAII reset: an early return (now or added later) must not leave the
+    // flag stuck and permanently lock out slewing.
+    struct FlagResetter
+    {
+        bool& flag;
+        ~FlagResetter() { flag = false; }
+    };
+    m_slewing = true;
+    FlagResetter resetSlewing { m_slewing };
+
     bool err = true;
 
     if (coord_prop && oncoordset_prop)

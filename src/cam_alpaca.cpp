@@ -1181,7 +1181,9 @@ bool CameraAlpaca::Capture(usImage& img, const CaptureParams& captureParams)
                 {
                     const json_value *elem = row->first_child;
                     int x = 0;
-                    unsigned short *dataptr = img.ImageData + (y - roi.y + roi.y) * img.Size.GetWidth() + roi.x;
+                    // img spans the full frame (allocated with FrameSize), so the
+                    // destination row is the full-frame row index y.
+                    unsigned short *dataptr = img.ImageData + y * img.Size.GetWidth() + roi.x;
                     while (elem && x < imageWidth)
                     {
                         if (x >= roi.x && x < roi.x + roi.width)

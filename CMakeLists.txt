@@ -126,7 +126,10 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 # main project
 # this should appear after setting the architecture
 project(phd2)
-enable_testing()
+# include(CTest) defines the standard BUILD_TESTING option (default ON) and
+# calls enable_testing(), so -DBUILD_TESTING=OFF is honored alongside
+# -DPHD_BUILD_TESTS=OFF below.
+include(CTest)
 
 
 #################################################################################
@@ -164,7 +167,7 @@ add_subdirectory(contributions/MPI_IS_gaussian_process tmp_gaussian_process)
 # build-dmg.sh, build-exe.ps1) pick the suite up automatically. Pass
 # -DPHD_BUILD_TESTS=OFF to skip building the test binaries.
 option(PHD_BUILD_TESTS "Build PHD2 unit tests" ON)
-if(PHD_BUILD_TESTS)
+if(PHD_BUILD_TESTS AND BUILD_TESTING)
   add_subdirectory(tests)
 endif()
 
@@ -227,20 +230,8 @@ set(scopes_SRC
   ${phd_src_dir}/scope.h
   ${phd_src_dir}/scope_ascom.cpp
   ${phd_src_dir}/scope_ascom.h
-  ${phd_src_dir}/scope_eqmac.cpp
-  ${phd_src_dir}/scope_eqmac.h
-  ${phd_src_dir}/scope_equinox.cpp
-  ${phd_src_dir}/scope_equinox.h
-  ${phd_src_dir}/scope_GC_USBST4.cpp
-  ${phd_src_dir}/scope_GC_USBST4.h
-  ${phd_src_dir}/scope_gpint.cpp
-  ${phd_src_dir}/scope_gpint.h
-  ${phd_src_dir}/scope_gpusb.cpp
-  ${phd_src_dir}/scope_gpusb.h
   ${phd_src_dir}/scope_manual_pointing.cpp
   ${phd_src_dir}/scope_manual_pointing.h
-  ${phd_src_dir}/scope_voyager.cpp
-  ${phd_src_dir}/scope_voyager.h
   ${phd_src_dir}/scopes.h
   ${phd_src_dir}/stepguider.cpp
   ${phd_src_dir}/stepguider.h

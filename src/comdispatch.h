@@ -44,6 +44,7 @@ wxString ExcepMsg(const wxString& prefix, const EXCEPINFO& excep);
 struct Variant : public VARIANT
 {
     Variant() { VariantInit(this); }
+    ~Variant() { VariantClear(this); }
 };
 
 class ExcepInfo : public EXCEPINFO

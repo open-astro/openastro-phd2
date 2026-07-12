@@ -82,13 +82,13 @@ override_dh_auto_install:
 		mv $(CURDIR)/debian/openastro-phd2/usr/bin/phd2.bin \
 		   $(CURDIR)/debian/openastro-phd2/usr/bin/openastro-phd2.bin; \
 	fi
-	# Bundle INDI 2.x runtime libs (built from source in the Docker image;
-	# Debian trixie only ships 1.9.9 which is too old).
-	if ls /usr/local/lib/libindi*.so* >/dev/null 2>&1; then \
-		mkdir -p $(CURDIR)/debian/openastro-phd2/usr/lib/openastro-phd2; \
-		find /usr/local/lib -name 'libindi*.so*' ! -type d \
-			-exec cp -P {} $(CURDIR)/debian/openastro-phd2/usr/lib/openastro-phd2/ \;; \
-	fi
+	# NOTE: we intentionally do NOT copy host /usr/local/lib/libindi*.so* into
+	# the package. INDI is consumed either as a proper build/runtime dependency
+	# (USE_SYSTEM_LIBINDI=1, libindi-dev) or built statically in-tree
+	# (USE_SYSTEM_LIBINDI=0 links the static libindiclient.a from the
+	# ExternalProject in thirdparty/thirdparty.cmake). Hoovering up whatever
+	# happens to sit in the host's /usr/local/lib was non-hermetic and could
+	# ship stray host INDI libraries, so it was removed.
 
 # Tell dh_shlibdeps where to find bundled libraries (INDI 2.x + any future
 # proprietary camera libs when OPENSOURCE_ONLY=0).
