@@ -4899,7 +4899,17 @@ static wxString url_decode(const std::string& s)
             bytes += c;
         }
     }
-    return wxString::FromUTF8(bytes.c_str(), bytes.size());
+    wxString result = wxString::FromUTF8(bytes.c_str(), bytes.size());
+    if (result.empty() && !bytes.empty())
+    {
+        // Invalid UTF-8 (e.g. a lone %80 or truncated multi-byte escape):
+        // FromUTF8 returns empty on strict wx builds. Fall back to a lossless
+        // 8-bit interpretation rather than silently swallowing the value.
+        Debug.Write(wxString::Format("url_decode: invalid UTF-8 in \"%s\", falling back to 8-bit decode\n",
+                                     wxString::From8BitData(s.c_str(), s.size())));
+        result = wxString::From8BitData(bytes.c_str(), bytes.size());
+    }
+    return result;
 }
 
 static std::map<std::string, wxString> parse_query(const std::string& qs)

@@ -37,6 +37,7 @@
 #include "phd.h"
 
 #include <atomic>
+#include <memory>
 
 #ifdef INDI_CAMERA
 
@@ -119,6 +120,11 @@ private:
     GuideAxis guide_active_axis;
 
     IndiGui *m_gui;
+
+    // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
+    // queued from the INDI client thread that runs after this object is
+    // destroyed becomes a no-op instead of dereferencing a dangling `this`.
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 
     wxMutex m_lastFrame_lock;
     wxCondition m_lastFrame_cond;
@@ -213,6 +219,8 @@ CameraINDI::CameraINDI() : sync_cond(sync_lock), m_lastFrame_cond(m_lastFrame_lo
 
 CameraINDI::~CameraINDI()
 {
+    *m_alive = false;
+
     if (m_gui)
         IndiGui::DestroyIndiGui(&m_gui);
 
@@ -351,7 +359,12 @@ void CameraINDI::updateProperty(INDI::Property property)
                     // want to join the INDI worker thread which is
                     // probably the current thread
 
-                    PhdApp::ExecInMainThread([this]() { DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT); });
+                    PhdApp::ExecInMainThread(
+                        [this, alive = m_alive]()
+                        {
+                            if (*alive)
+                                DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT);
+                        });
                 }
             }
         }
@@ -770,7 +783,12 @@ void CameraINDI::serverDisconnected(int exit_code)
     // Called on the INDI client thread; DisconnectWithAlert joins the INDI
     // worker thread, so hop to the main thread to avoid self-joining.
     if (exit_code == -1)
-        PhdApp::ExecInMainThread([this]() { DisconnectWithAlert(_("INDI server disconnected"), NO_RECONNECT); });
+        PhdApp::ExecInMainThread(
+            [this, alive = m_alive]()
+            {
+                if (*alive)
+                    DisconnectWithAlert(_("INDI server disconnected"), NO_RECONNECT);
+            });
 }
 
 void CameraINDI::removeDevice(INDI::BaseDevice dp)
@@ -778,7 +796,12 @@ void CameraINDI::removeDevice(INDI::BaseDevice dp)
     ClearStatus();
     // Called on the INDI client thread; DisconnectWithAlert joins the INDI
     // worker thread, so hop to the main thread to avoid self-joining.
-    PhdApp::ExecInMainThread([this]() { DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT); });
+    PhdApp::ExecInMainThread(
+        [this, alive = m_alive]()
+        {
+            if (*alive)
+                DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT);
+        });
 }
 
 void CameraINDI::ShowPropertyDialog()

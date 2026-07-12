@@ -36,6 +36,8 @@
  */
 #include "phd.h"
 
+#include <memory>
+
 #ifdef GUIDE_INDI
 
 # include "config_indi.h"
@@ -96,6 +98,11 @@ private:
     bool m_ready;
     bool eod_coord;
 
+    // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
+    // queued from the INDI client thread that runs after this object is
+    // destroyed becomes a no-op instead of dereferencing a dangling `this`.
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
+
     bool ConnectToDriver(RunInBg *ctx);
     void ClearStatus();
     void CheckState();
@@ -150,6 +157,8 @@ ScopeINDI::ScopeINDI() : sync_cond(sync_lock)
 
 ScopeINDI::~ScopeINDI()
 {
+    *m_alive = false;
+
     disconnectServer();
 }
 
@@ -363,8 +372,10 @@ void ScopeINDI::serverDisconnected(int exit_code)
     {
         // This is called on the INDI client thread; UI calls must hop to the main thread.
         PhdApp::ExecInMainThread(
-            [this]()
+            [this, alive = m_alive]()
             {
+                if (!*alive)
+                    return;
                 pFrame->Alert(_("INDI server disconnected"));
                 Disconnect();
             });
@@ -376,7 +387,12 @@ void ScopeINDI::removeDevice(INDI::BaseDevice dp)
     ClearStatus();
     // Called on the INDI client thread; Disconnect() joins the INDI worker thread,
     // so hop to the main thread to avoid self-joining.
-    PhdApp::ExecInMainThread([this]() { Disconnect(); });
+    PhdApp::ExecInMainThread(
+        [this, alive = m_alive]()
+        {
+            if (*alive)
+                Disconnect();
+        });
 }
 
 void ScopeINDI::newDevice(INDI::BaseDevice dp)
@@ -415,8 +431,10 @@ void ScopeINDI::updateProperty(INDI::Property property)
                     // probably the current thread
 
                     PhdApp::ExecInMainThread(
-                        [this]()
+                        [this, alive = m_alive]()
                         {
+                            if (!*alive)
+                                return;
                             pFrame->Alert(_("INDI mount was disconnected"));
                             Connected = false;
                             Disconnect();
@@ -862,7 +880,15 @@ bool ScopeINDI::SlewToCoordinates(double ra, double dec)
     static bool s_slewing = false;
     if (s_slewing)
         return true;
+    // RAII reset: the flag is process-global, so an early return (now or added
+    // later) must not leave it stuck and permanently lock out slewing.
+    struct FlagResetter
+    {
+        bool& flag;
+        ~FlagResetter() { flag = false; }
+    };
     s_slewing = true;
+    FlagResetter resetSlewing { s_slewing };
 
     bool err = true;
 
@@ -879,7 +905,6 @@ bool ScopeINDI::SlewToCoordinates(double ra, double dec)
             err = false;
     }
 
-    s_slewing = false;
     return err;
 }
 

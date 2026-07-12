@@ -62,7 +62,10 @@ public:
     AlpacaClient(const wxString& host, long port, long deviceNumber);
     ~AlpacaClient();
 
-    bool Get(const wxString& endpoint, JsonParser& parser, long *errorCode = nullptr);
+    // rawResponse, if non-null, receives a copy of the response body taken while
+    // m_mutex is still held, so callers can log it without racing a concurrent
+    // request that would overwrite m_response.
+    bool Get(const wxString& endpoint, JsonParser& parser, long *errorCode = nullptr, std::string *rawResponse = nullptr);
     bool GetRaw(const wxString& endpoint, const wxString& acceptHeader, std::string *response, std::string *contentType,
                 long *errorCode = nullptr);
     bool Put(const wxString& endpoint, const wxString& params, JsonParser& parser, long *errorCode = nullptr);

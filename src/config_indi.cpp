@@ -337,7 +337,15 @@ void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
     static bool s_discovering = false;
     if (s_discovering)
         return;
+    // RAII reset: the flag is process-global, so an early return (now or added
+    // later) must not leave it stuck and permanently disable discovery.
+    struct FlagResetter
+    {
+        bool& flag;
+        ~FlagResetter() { flag = false; }
+    };
     s_discovering = true;
+    FlagResetter resetDiscovering { s_discovering };
 
     Debug.Write("INDIConfig::OnDiscover: scanning local subnets for port 7624\n");
 
@@ -396,7 +404,6 @@ void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
 
     discoverButton->Enable(true);
     Enable(true);
-    s_discovering = false;
 }
 
 void INDIConfig::OnServerSelected(wxCommandEvent& WXUNUSED(evt))
