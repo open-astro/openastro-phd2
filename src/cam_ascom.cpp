@@ -315,22 +315,27 @@ static bool ASCOM_Image(IDispatch *cam, usImage& img, bool is_subframe, const wx
         return true;
     }
 
-    // ImageArray must be a SAFEARRAY of 4-byte longs per ASCOM ICameraV3. Verify
-    // the variant type before touching parray so a misbehaving driver can't make
-    // us walk a garbage pointer.
-    if (vRes.vt != (VT_ARRAY | VT_I4) || vRes.parray == nullptr)
+    // ImageArray must be a SAFEARRAY of 4-byte longs per ASCOM ICameraV3, but
+    // some older non-conformant drivers return 16-bit elements (I2/UI2), so
+    // accept those too. Verify the variant type before touching parray so a
+    // misbehaving driver can't make us walk a garbage pointer.
+    VARTYPE const eltType = vRes.vt & VT_TYPEMASK;
+    if (!(vRes.vt & VT_ARRAY) || (eltType != VT_I4 && eltType != VT_I2 && eltType != VT_UI2) || vRes.parray == nullptr)
     {
-        Debug.Write(wxString::Format("ASCOM camera: ImageArray is not a SAFEARRAY of I4 (vt = 0x%x)\n", vRes.vt));
+        Debug.Write(wxString::Format("ASCOM camera: ImageArray has unsupported element type (vt = 0x%x, expected an "
+                                     "array of I4, I2, or UI2)\n",
+                                     vRes.vt));
         VariantClear(&vRes);
         return true;
     }
 
     SAFEARRAY *rawarray = vRes.parray;
 
-    if (SafeArrayGetElemsize(rawarray) != sizeof(long))
+    unsigned int const expectedElemSize = eltType == VT_I4 ? 4 : 2;
+    if (SafeArrayGetElemsize(rawarray) != expectedElemSize)
     {
         Debug.Write(wxString::Format("ASCOM camera: ImageArray element size is %u, expected %u\n",
-                                     SafeArrayGetElemsize(rawarray), (unsigned int) sizeof(long)));
+                                     SafeArrayGetElemsize(rawarray), expectedElemSize));
         VariantClear(&vRes);
         return true;
     }
@@ -353,13 +358,26 @@ static bool ASCOM_Image(IDispatch *cam, usImage& img, bool is_subframe, const wx
         return true;
     }
 
-    long *rawdata;
-    hr = SafeArrayAccessData(rawarray, (void **) &rawdata);
+    void *rawdata;
+    hr = SafeArrayAccessData(rawarray, &rawdata);
     if (hr != S_OK)
     {
         VariantClear(&vRes);
         return true;
     }
+
+    auto pixel = [rawdata, eltType](size_t i) -> unsigned short
+    {
+        switch (eltType)
+        {
+        case VT_I2:
+            return (unsigned short) static_cast<const short *>(rawdata)[i];
+        case VT_UI2:
+            return static_cast<const unsigned short *>(rawdata)[i];
+        default: // VT_I4
+            return (unsigned short) static_cast<const long *>(rawdata)[i];
+        }
+    };
 
     long xsize = ubound1 - lbound1 + 1;
     long ysize = ubound2 - lbound2 + 1;
@@ -426,7 +444,7 @@ static bool ASCOM_Image(IDispatch *cam, usImage& img, bool is_subframe, const wx
         {
             unsigned short *dataptr = img.ImageData + (y + roi.y) * img.Size.GetWidth() + roi.x;
             for (int x = 0; x < roi.width; x++, i++)
-                *dataptr++ = (unsigned short) rawdata[i];
+                *dataptr++ = pixel(i);
         }
     }
     else
@@ -442,7 +460,7 @@ static bool ASCOM_Image(IDispatch *cam, usImage& img, bool is_subframe, const wx
         }
 
         for (unsigned int i = 0; i < img.NPixels; i++)
-            img.ImageData[i] = (unsigned short) rawdata[i];
+            img.ImageData[i] = pixel(i);
     }
 
     hr = SafeArrayUnaccessData(rawarray);

@@ -46,6 +46,8 @@
 
 #include "indi_gui.h"
 
+#include <memory>
+
 enum IndiDevType
 {
     INDI_TYPE_CAMERA,
@@ -76,6 +78,11 @@ class INDIConfig : public wxDialog, public INDI::BaseClient
 
     IndiGui *m_gui;
     IndiDevType dev_type;
+
+    // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
+    // queued from the INDI client thread that runs after this dialog is
+    // destroyed becomes a no-op instead of dereferencing dangling controls.
+    std::shared_ptr<bool> m_alive = std::make_shared<bool>(true);
 
 public:
     INDIConfig(wxWindow *parent, const wxString& title, IndiDevType devtype);

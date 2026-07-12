@@ -4896,6 +4896,10 @@ static wxString url_decode(const std::string& s)
         }
         else
         {
+            // A malformed % sequence (non-hex digits or truncated) is passed
+            // through as-is, one character at a time: '%' here, then the
+            // following characters on subsequent iterations — matching the
+            // RFC 3986 lenient practice of leaving invalid escapes literal.
             bytes += c;
         }
     }

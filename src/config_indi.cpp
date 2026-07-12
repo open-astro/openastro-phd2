@@ -268,6 +268,8 @@ wxEND_EVENT_TABLE();
 
 INDIConfig::~INDIConfig()
 {
+    *m_alive = false;
+
     if (m_gui)
         IndiGui::DestroyIndiGui(&m_gui);
 
@@ -492,8 +494,10 @@ void INDIConfig::newDevice(INDI::BaseDevice dp)
     // hop to the main thread (same mechanism serverConnected uses).
     wxString name(devname);
     PhdApp::ExecInMainThread(
-        [this, name]()
+        [this, name, alive = m_alive]()
         {
+            if (!*alive)
+                return;
             dev->Append(name);
             if (name == INDIDevName)
             {
@@ -573,10 +577,13 @@ void INDIConfig::newProperty(INDI::Property property)
             // newProperty is called on the INDI client thread; wx control
             // mutations must hop to the main thread (same mechanism
             // serverConnected uses).
+            wxString name(devname);
             PhdApp::ExecInMainThread(
-                [this, devname]()
+                [this, name, alive = m_alive]()
                 {
-                    int n = dev->FindString(devname, true);
+                    if (!*alive)
+                        return;
+                    int n = dev->FindString(name, true);
                     if (n != wxNOT_FOUND)
                     {
                         dev->Delete(n);

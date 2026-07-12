@@ -18,7 +18,9 @@ concurrency:
 jobs:
   build:
     name: Linux build + ctest
-    runs-on: ubuntu-latest
+    # Pinned (not ubuntu-latest) so a new LTS image with renamed/incompatible
+    # INDI PPA packages can't break CI without a code change.
+    runs-on: ubuntu-24.04
     permissions:
       contents: read
     steps:

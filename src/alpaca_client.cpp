@@ -514,7 +514,8 @@ bool AlpacaClient::GetRaw(const wxString& endpoint, const wxString& acceptHeader
     return true;
 }
 
-bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonParser& parser, long *errorCode)
+bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonParser& parser, long *errorCode,
+                       std::string *rawResponse)
 {
     if (!m_curl)
     {
@@ -615,6 +616,8 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
     if (httpCode != 200)
     {
         std::string responseStr = m_response.str();
+        if (rawResponse)
+            *rawResponse = responseStr;
         Debug.Write(wxString::Format("AlpacaClient PUT returned HTTP %ld, response: %s\n", httpCode,
                                      wxString(responseStr.c_str(), wxConvUTF8)));
         return false;
@@ -625,6 +628,8 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
     wxMilliSleep(100);
 
     std::string responseStr = m_response.str();
+    if (rawResponse)
+        *rawResponse = responseStr;
     if (!parser.Parse(responseStr))
     {
         Debug.Write(wxString::Format("AlpacaClient: JSON parse error: %s\n", parser.ErrorDesc()));
