@@ -3968,13 +3968,18 @@ static void get_algo_param(JObj& response, const json_value *params)
     double val;
     if (pMount)
     {
+        // can be null before a guide algorithm is configured (e.g. an AO
+        // mount axis with no algorithm assigned)
         GuideAlgorithm *alg = a == GUIDE_X ? pMount->GetXGuideAlgorithm() : pMount->GetYGuideAlgorithm();
-        if (strcmp(name->string_value, "algorithmName") == 0)
+        if (alg)
         {
-            response << jrpc_result(alg->GetGuideAlgorithmClassName());
-            return;
+            if (strcmp(name->string_value, "algorithmName") == 0)
+            {
+                response << jrpc_result(alg->GetGuideAlgorithmClassName());
+                return;
+            }
+            ok = alg->GetParam(name->string_value, &val);
         }
-        ok = alg->GetParam(name->string_value, &val);
     }
     if (ok)
         response << jrpc_result(val);
@@ -4012,8 +4017,11 @@ static void set_algo_param(JObj& response, const json_value *params)
     bool ok = false;
     if (pMount)
     {
+        // can be null before a guide algorithm is configured (e.g. an AO
+        // mount axis with no algorithm assigned)
         GuideAlgorithm *alg = a == GUIDE_X ? pMount->GetXGuideAlgorithm() : pMount->GetYGuideAlgorithm();
-        ok = alg->SetParam(name->string_value, v);
+        if (alg)
+            ok = alg->SetParam(name->string_value, v);
     }
     if (ok)
     {
