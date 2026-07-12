@@ -79,6 +79,10 @@ class INDIConfig : public wxDialog, public INDI::BaseClient
     IndiGui *m_gui;
     IndiDevType dev_type;
 
+    // Reentrancy guard for OnDiscover's wxYield loop; per-instance so one
+    // dialog's scan can't lock out another instance.
+    bool m_discovering = false;
+
     // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
     // queued from the INDI client thread that runs after this dialog is
     // destroyed becomes a no-op instead of dereferencing dangling controls.

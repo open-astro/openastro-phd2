@@ -336,18 +336,22 @@ void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
     // can dispatch a second Discover/Connect click or a dialog close. Re-entering
     // (or destroying the dialog) mid-scan would corrupt state or free us while we
     // are still using member controls. Bail if a scan is already in progress.
-    static bool s_discovering = false;
-    if (s_discovering)
+    if (m_discovering)
         return;
-    // RAII reset: the flag is process-global, so an early return (now or added
-    // later) must not leave it stuck and permanently disable discovery.
-    struct FlagResetter
+    m_discovering = true;
+    // RAII: reset the flag and re-enable the dialog on every exit path so an
+    // early return or exception can't leave discovery locked out or the
+    // dialog permanently disabled.
+    struct DiscoveryGuard
     {
-        bool& flag;
-        ~FlagResetter() { flag = false; }
-    };
-    s_discovering = true;
-    FlagResetter resetDiscovering { s_discovering };
+        INDIConfig *dlg;
+        ~DiscoveryGuard()
+        {
+            dlg->m_discovering = false;
+            dlg->discoverButton->Enable(true);
+            dlg->Enable(true);
+        }
+    } guard { this };
 
     Debug.Write("INDIConfig::OnDiscover: scanning local subnets for port 7624\n");
 
@@ -403,9 +407,6 @@ void INDIConfig::OnDiscover(wxCommandEvent& WXUNUSED(evt))
             port->SetValue(wxString::Format("%ld", p));
         }
     }
-
-    discoverButton->Enable(true);
-    Enable(true);
 }
 
 void INDIConfig::OnServerSelected(wxCommandEvent& WXUNUSED(evt))

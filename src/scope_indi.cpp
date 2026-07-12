@@ -98,6 +98,10 @@ private:
     bool m_ready;
     bool eod_coord;
 
+    // Reentrancy guard for SlewToCoordinates' wxSafeYield loop; per-instance
+    // so one mount's synchronous slew can't lock out another instance.
+    bool m_slewing = false;
+
     // Guards ExecInMainThread lambdas: cleared in the destructor so a lambda
     // queued from the INDI client thread that runs after this object is
     // destroyed becomes a no-op instead of dereferencing a dangling `this`.
@@ -877,18 +881,17 @@ bool ScopeINDI::SlewToCoordinates(double ra, double dec)
     // Reentrancy guard: the wxSafeYield() loop below pumps the event loop, which
     // can dispatch a second slew request (or other handlers) while we are still
     // waiting on this one. Bail if a synchronous slew is already in progress.
-    static bool s_slewing = false;
-    if (s_slewing)
+    if (m_slewing)
         return true;
-    // RAII reset: the flag is process-global, so an early return (now or added
-    // later) must not leave it stuck and permanently lock out slewing.
+    // RAII reset: an early return (now or added later) must not leave the
+    // flag stuck and permanently lock out slewing.
     struct FlagResetter
     {
         bool& flag;
         ~FlagResetter() { flag = false; }
     };
-    s_slewing = true;
-    FlagResetter resetSlewing { s_slewing };
+    m_slewing = true;
+    FlagResetter resetSlewing { m_slewing };
 
     bool err = true;
 
