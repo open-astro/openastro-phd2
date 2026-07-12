@@ -4108,9 +4108,16 @@ static void set_variable_delay_settings(JObj& response, const json_value *params
         response << jrpc_error(JSONRPC_INVALID_PARAMS, "expected Enabled, ShortDelaySeconds, LongDelaySeconds params)");
         return;
     }
-    if (shortDelaySec < 0.0 || longDelaySec < 0.0)
+    // Upper bound keeps (int)(sec * 1000) well inside int range — the cast
+    // would be undefined behavior on overflow. One hour is far above any
+    // useful dither settle delay.
+    enum
     {
-        response << jrpc_error(JSONRPC_INVALID_PARAMS, "delay seconds must be non-negative");
+        MAX_DELAY_SEC = 3600
+    };
+    if (shortDelaySec < 0.0 || longDelaySec < 0.0 || shortDelaySec > MAX_DELAY_SEC || longDelaySec > MAX_DELAY_SEC)
+    {
+        response << jrpc_error(JSONRPC_INVALID_PARAMS, "delay seconds must be in the range 0..3600");
         return;
     }
     pFrame->SetVariableDelayConfig(enabled, (int) (shortDelaySec * 1000), (int) (longDelaySec * 1000));
@@ -4876,6 +4883,62 @@ static std::string lower_ascii(const std::string& s)
     return t;
 }
 
+// Strict UTF-8 validity check (rejects overlong encodings, surrogates, and
+// code points above U+10FFFF). Used by url_decode to pick a decode path
+// deterministically: wxString::FromUTF8's behavior on invalid input differs
+// between wx builds (empty string on strict builds, U+FFFD substitution on
+// lenient ones), so we must not rely on it to detect invalid input.
+static bool valid_utf8(const std::string& s)
+{
+    size_t i = 0;
+    while (i < s.size())
+    {
+        unsigned char c = s[i];
+        size_t cont;
+        if (c < 0x80)
+            cont = 0;
+        else if ((c & 0xE0) == 0xC0)
+        {
+            if (c < 0xC2) // overlong 2-byte
+                return false;
+            cont = 1;
+        }
+        else if ((c & 0xF0) == 0xE0)
+            cont = 2;
+        else if ((c & 0xF8) == 0xF0)
+        {
+            if (c > 0xF4) // above U+10FFFF
+                return false;
+            cont = 3;
+        }
+        else
+            return false;
+        if (i + cont >= s.size())
+            return false;
+        for (size_t j = 1; j <= cont; j++)
+            if (((unsigned char) s[i + j] & 0xC0) != 0x80)
+                return false;
+        if (cont == 2)
+        {
+            unsigned char c1 = s[i + 1];
+            if (c == 0xE0 && c1 < 0xA0) // overlong 3-byte
+                return false;
+            if (c == 0xED && c1 > 0x9F) // UTF-16 surrogate range
+                return false;
+        }
+        else if (cont == 3)
+        {
+            unsigned char c1 = s[i + 1];
+            if (c == 0xF0 && c1 < 0x90) // overlong 4-byte
+                return false;
+            if (c == 0xF4 && c1 > 0x8F) // above U+10FFFF
+                return false;
+        }
+        i += cont + 1;
+    }
+    return true;
+}
+
 static wxString url_decode(const std::string& s)
 {
     auto hex_val = [](char c) -> int
@@ -4911,17 +4974,17 @@ static wxString url_decode(const std::string& s)
             bytes += c;
         }
     }
-    wxString result = wxString::FromUTF8(bytes.c_str(), bytes.size());
-    if (result.empty() && !bytes.empty())
-    {
-        // Invalid UTF-8 (e.g. a lone %80 or truncated multi-byte escape):
-        // FromUTF8 returns empty on strict wx builds. Fall back to a lossless
-        // 8-bit interpretation rather than silently swallowing the value.
-        Debug.Write(wxString::Format("url_decode: invalid UTF-8 in \"%s\", falling back to 8-bit decode\n",
-                                     wxString::From8BitData(s.c_str(), s.size())));
-        result = wxString::From8BitData(bytes.c_str(), bytes.size());
-    }
-    return result;
+    // Pick the decode path with our own validity check rather than probing
+    // FromUTF8's build-dependent failure behavior (see valid_utf8 above).
+    if (valid_utf8(bytes))
+        return wxString::FromUTF8(bytes.c_str(), bytes.size());
+
+    // Invalid UTF-8 (e.g. a lone %80 or truncated multi-byte escape): fall
+    // back to a lossless 8-bit interpretation rather than silently swallowing
+    // or mangling the value.
+    Debug.Write(wxString::Format("url_decode: invalid UTF-8 in \"%s\", falling back to 8-bit decode\n",
+                                 wxString::From8BitData(s.c_str(), s.size())));
+    return wxString::From8BitData(bytes.c_str(), bytes.size());
 }
 
 static std::map<std::string, wxString> parse_query(const std::string& qs)
