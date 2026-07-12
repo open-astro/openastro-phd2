@@ -65,7 +65,10 @@ jobs:
             -DOPENSOURCE_ONLY=1
 
       - name: Build
-        run: cmake --build build --parallel
+        # Cap parallelism: the gaussian_process/Eigen translation units are
+        # memory-heavy and full -j on the hosted runner OOM-kills the job
+        # (exit 143). Two jobs keeps peak RAM under the runner's limit.
+        run: cmake --build build --parallel 2
 
       - name: Test
         working-directory: build

@@ -13,13 +13,7 @@ concurrency:
 jobs:
   review:
     runs-on: ubuntu-latest
-    # Skip on PRs from forks: the CLAUDE_CODE_OAUTH_TOKEN secret is not exposed
-    # to fork PRs, so the action would fail noisily. Only run for same-repo PRs.
-    if: github.event.pull_request.head.repo.full_name == github.repository
     permissions:
-      # Least privilege for the review + sticky PR comment. id-token: write is
-      # required by claude-code-action to fetch an OIDC token (removing it fails
-      # the job with "Could not fetch an OIDC token").
       contents: read
       pull-requests: write
       id-token: write
