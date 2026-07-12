@@ -1,5 +1,10 @@
 # openastro-guider — Decisions log
 
+> **Note:** This document tracks the **separate** `open-astro/openastro-guider`
+> project (a Linux-only, headless, Alpaca-only downstream fork). It is kept here
+> as reference/tracking material only and is **not** the roadmap for this
+> `openastro-phd2` repo.
+
 Append-only log of every non-obvious decision made during the strip + headless-enable.
 Each entry: date, decision, reason, and a file/ref where it's encoded. **Do not edit prior
 entries; add new ones at the bottom.**

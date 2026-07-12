@@ -4,7 +4,7 @@ Priority: optional
 Maintainer: OpenAstro <support@openastro.net>
 Build-Depends: debhelper-compat (= 13),
                cmake,
-               libwxgtk3.2-dev | libwxgtk3.0-dev | libwxgtk3.0-gtk3-dev,
+               libwxgtk3.2-dev,
                libcfitsio-dev,
                libindi-dev,
                libopencv-dev,
@@ -14,7 +14,7 @@ Build-Depends: debhelper-compat (= 13),
                libeigen3-dev,
                libgtest-dev
 Standards-Version: 4.6.2
-Homepage: https://github.com/open-astro/phd2-alpaca-indi
+Homepage: https://github.com/open-astro/openastro-phd2
 
 Package: openastro-phd2
 Architecture: any

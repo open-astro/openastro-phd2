@@ -1,12 +1,17 @@
 name: clang-format Check
-on: [push, pull_request]
+# Run on PRs and on pushes to main only, so in-repo PRs don't double-run
+# (once for the branch push, once for the pull_request event).
+on:
+  push:
+    branches: [main]
+  pull_request:
 jobs:
   formatting-check:
     name: Formatting Check
     runs-on: ubuntu-latest
     steps:
     - name: Checkout code
-      uses: actions/checkout@v6
+      uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
 
     - name: Install clang-format
       run: sudo apt-get update -q && sudo apt-get install -y -q clang-format-18

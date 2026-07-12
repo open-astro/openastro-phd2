@@ -194,14 +194,27 @@ bundle_dylib() {
 
     cp "$real" "$frameworks/$load_name"
     chmod u+w "$frameworks/$load_name"
-    install_name_tool -id "@executable_path/../Frameworks/$load_name" "$frameworks/$load_name" 2>/dev/null
+    # Do NOT discard install_name_tool stderr: a failed rewrite here leaves a
+    # dylib whose id/loads still point outside the bundle, which only shows up
+    # as a launch crash on a Homebrew-less Mac. Fail loud instead.
+    install_name_tool -id "@executable_path/../Frameworks/$load_name" "$frameworks/$load_name" \
+        || err "install_name_tool -id failed on $frameworks/$load_name"
 
     while read -r dep; do
         [[ -z "$dep" ]] && continue
         if is_external_dylib "$dep"; then
             dep_load=$(bundled_name_for "$dep")
+            # An empty bundled name means bundled_name_for could not resolve the
+            # dep (e.g. an unresolvable @rpath). Rewriting with an empty target
+            # would produce "@executable_path/../Frameworks/" and silently
+            # corrupt the load command — skip and warn instead.
+            if [[ -z "$dep_load" ]]; then
+                warn "Skipping install-name rewrite for '$dep' in $load_name: could not resolve its bundled basename."
+                continue
+            fi
             bundle_dylib "$dep" "$app"
-            install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_load" "$frameworks/$load_name" 2>/dev/null
+            install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_load" "$frameworks/$load_name" \
+                || err "install_name_tool -change failed rewriting '$dep' in $load_name"
         fi
     done < <(otool -L "$real" | tail -n +2 | awk '{print $1}' | grep -vE "^$real$" || true)
 
@@ -231,8 +244,13 @@ bundle_app_dylibs() {
         [[ -z "$dep" ]] && continue
         if is_external_dylib "$dep"; then
             dep_load=$(bundled_name_for "$dep")
+            if [[ -z "$dep_load" ]]; then
+                warn "Skipping install-name rewrite for '$dep' in $(basename "$exe"): could not resolve its bundled basename."
+                continue
+            fi
             bundle_dylib "$dep" "$app"
-            install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_load" "$exe" 2>/dev/null
+            install_name_tool -change "$dep" "@executable_path/../Frameworks/$dep_load" "$exe" \
+                || err "install_name_tool -change failed rewriting '$dep' in the app binary"
         fi
     done < <(otool -L "$exe" | tail -n +2 | awk '{print $1}')
 
@@ -456,6 +474,13 @@ DEVICE=$(awk '/Apple_HFS/ {print $1; exit}' "$ATTACH_LOG")
 rm -f "$ATTACH_LOG"
 [[ -n "$DEVICE" ]] || err "Could not determine device node for mounted staging DMG."
 
+# From here until the explicit detach below the staging DMG is attached. If
+# anything aborts in between (e.g. a failing command under set -e), make sure
+# the image is detached so we don't leave a dangling /Volumes mount and a busy
+# device node that blocks the next run. Cleared right after the real detach.
+detach_staging() { hdiutil detach "$DEVICE" -force >/dev/null 2>&1 || true; }
+trap detach_staging EXIT
+
 # hdiutil attach returns once the kernel mount is up, but Finder learns about
 # the volume asynchronously via diskarbitrationd. On Tahoe the race is tight
 # enough that the AppleScript below raises -1728 ("Can't get disk PHD2")
@@ -482,7 +507,7 @@ cp "$BG_IMG" "${MOUNTPOINT}/.background/background.png"
 # Note: backticks in this heredoc would be evaluated by bash as command
 # substitution (`text color` previously produced "text: command not found").
 # Keep comments backtick-free.
-osascript <<APPLESCRIPT
+osascript <<APPLESCRIPT || warn "Finder layout skipped (osascript failed, e.g. denied Automation prompt); shipping DMG with the default window layout."
 tell application "Finder"
     -- Give Finder another beat to register the freshly attached disk so
     -- the "tell disk" below resolves cleanly on Tahoe.
@@ -518,6 +543,7 @@ APPLESCRIPT
 
 sync
 hdiutil detach "$DEVICE" -force
+trap - EXIT
 
 step "Compressing to ${DMG_NAME}..."
 hdiutil convert "$STAGING_DMG" -format UDZO -imagekey zlib-level=9 -o "$DMG_NAME"

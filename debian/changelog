@@ -1,4 +1,4 @@
-openastro-phd2 (2.0.0) UNRELEASED; urgency=low
+openastro-phd2 (2.0.0) stable; urgency=low
 
   * Rename Debian source/binary package phd2-alpaca -> openastro-phd2 to match
     the macOS bundle identifier (net.openastro.phd2) and Windows installer

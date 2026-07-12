@@ -374,7 +374,9 @@ void ScopeINDI::serverDisconnected(int exit_code)
 void ScopeINDI::removeDevice(INDI::BaseDevice dp)
 {
     ClearStatus();
-    Disconnect();
+    // Called on the INDI client thread; Disconnect() joins the INDI worker thread,
+    // so hop to the main thread to avoid self-joining.
+    PhdApp::ExecInMainThread([this]() { Disconnect(); });
 }
 
 void ScopeINDI::newDevice(INDI::BaseDevice dp)
@@ -854,6 +856,14 @@ bool ScopeINDI::CanSlewAsync()
 
 bool ScopeINDI::SlewToCoordinates(double ra, double dec)
 {
+    // Reentrancy guard: the wxSafeYield() loop below pumps the event loop, which
+    // can dispatch a second slew request (or other handlers) while we are still
+    // waiting on this one. Bail if a synchronous slew is already in progress.
+    static bool s_slewing = false;
+    if (s_slewing)
+        return true;
+    s_slewing = true;
+
     bool err = true;
 
     if (coord_prop && oncoordset_prop)
@@ -869,6 +879,7 @@ bool ScopeINDI::SlewToCoordinates(double ra, double dec)
             err = false;
     }
 
+    s_slewing = false;
     return err;
 }
 

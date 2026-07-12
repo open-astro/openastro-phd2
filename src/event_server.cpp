@@ -3098,6 +3098,11 @@ static bool capture_master_dark_frame(usImage& darkFrame, int expTimeMs, int fra
 
         if (avgimg.empty())
             avgimg.resize(darkFrame.NPixels, 0);
+        else if (darkFrame.NPixels != avgimg.size())
+        {
+            *error = wxString::Format("dark frame %d/%d size changed during accumulation", j, frameCount);
+            return true;
+        }
         for (unsigned int i = 0; i < darkFrame.NPixels; i++)
             avgimg[i] += darkFrame.ImageData[i];
     }
@@ -3465,6 +3470,7 @@ static void capture_single_frame(JObj& response, const json_value *params)
     if (!pCamera || !pCamera->Connected)
     {
         response << jrpc_error(1, "cannot capture single frame when camera is not connected");
+        return;
     }
 
     Params p("exposure", "binning", "gain", "subframe", "path", "save", params);
@@ -3992,6 +3998,11 @@ static void set_algo_param(JObj& response, const json_value *params)
         return;
     }
     const json_value *val = p.param("value");
+    if (!val)
+    {
+        response << jrpc_error(JSONRPC_INVALID_PARAMS, "expected param value param");
+        return;
+    }
     double v;
     if (!float_param(val, &v))
     {
@@ -4089,8 +4100,13 @@ static void set_variable_delay_settings(JObj& response, const json_value *params
         response << jrpc_error(JSONRPC_INVALID_PARAMS, "expected Enabled, ShortDelaySeconds, LongDelaySeconds params)");
         return;
     }
+    if (shortDelaySec < 0.0 || longDelaySec < 0.0)
+    {
+        response << jrpc_error(JSONRPC_INVALID_PARAMS, "delay seconds must be non-negative");
+        return;
+    }
     VarDelayCfg currParams;
-    pFrame->SetVariableDelayConfig(enabled, (int) shortDelaySec * 1000, (int) longDelaySec * 1000);
+    pFrame->SetVariableDelayConfig(enabled, (int) (shortDelaySec * 1000), (int) (longDelaySec * 1000));
     response << jrpc_result(0);
 }
 
@@ -4855,33 +4871,35 @@ static std::string lower_ascii(const std::string& s)
 
 static wxString url_decode(const std::string& s)
 {
-    wxString out;
+    auto hex_val = [](char c) -> int {
+        if (c >= '0' && c <= '9')
+            return c - '0';
+        if (c >= 'a' && c <= 'f')
+            return c - 'a' + 10;
+        if (c >= 'A' && c <= 'F')
+            return c - 'A' + 10;
+        return -1;
+    };
+
+    std::string bytes;
     for (size_t i = 0; i < s.size(); i++)
     {
         char c = s[i];
         if (c == '+')
         {
-            out << ' ';
+            bytes += ' ';
         }
-        else if (c == '%' && i + 2 < s.size())
+        else if (c == '%' && i + 2 < s.size() && hex_val(s[i + 1]) >= 0 && hex_val(s[i + 2]) >= 0)
         {
-            unsigned int v = 0;
-            if (sscanf(s.substr(i + 1, 2).c_str(), "%02x", &v) == 1)
-            {
-                out << (wxChar) v;
-                i += 2;
-            }
-            else
-            {
-                out << c;
-            }
+            bytes += (char) ((hex_val(s[i + 1]) << 4) | hex_val(s[i + 2]));
+            i += 2;
         }
         else
         {
-            out << c;
+            bytes += c;
         }
     }
-    return out;
+    return wxString::FromUTF8(bytes.c_str(), bytes.size());
 }
 
 static std::map<std::string, wxString> parse_query(const std::string& qs)

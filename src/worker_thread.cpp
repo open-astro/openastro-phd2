@@ -390,6 +390,7 @@ wxThread::ExitCode WorkerThread::Entry()
 #if defined(__WINDOWS__)
     HRESULT hr = CoInitializeEx(NULL, COINIT_MULTITHREADED);
     Debug.Write(wxString::Format("worker thread CoInitializeEx returns %x\n", hr));
+    bool comInitialized = SUCCEEDED(hr);
 #endif
 
     while (!bDone)
@@ -465,6 +466,12 @@ wxThread::ExitCode WorkerThread::Entry()
 
     Debug.Write("WorkerThread::Entry() ends\n");
     Debug.Flush();
+
+#if defined(__WINDOWS__)
+    // balance the CoInitializeEx above so the COM apartment is torn down when the thread exits
+    if (comInitialized)
+        CoUninitialize();
+#endif
 
     return (wxThread::ExitCode) 0;
 }

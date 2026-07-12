@@ -1,0 +1,68 @@
+name: Build and Test
+
+# Baseline CI: configure, build, and run the test suite on a Debian/Ubuntu
+# runner. This is a starting point — it uses the distro's packaged libindi
+# (Ubuntu ships libindi-dev) rather than the from-source INDI path in
+# run_deb.sh, and builds open-source-only (no proprietary camera SDKs).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# Cancel superseded runs on the same ref to save runner minutes.
+concurrency:
+  group: build-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Linux build + ctest
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Dependency list is derived from debian/control Build-Depends and the
+      # apt hint in run_deb.sh. wxWidgets 3.2 dev, cfitsio, libnova, gettext,
+      # libindi-dev, opencv, eigen, curl, gtest. USE_SYSTEM_LIBINDI/GTEST=1
+      # so we link the distro packages instead of building them from source.
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            gettext \
+            libwxgtk3.2-dev \
+            wx-common \
+            libcfitsio-dev \
+            libnova-dev \
+            libindi-dev \
+            libopencv-dev \
+            libeigen3-dev \
+            libv4l-dev \
+            libcurl4-gnutls-dev \
+            libgtest-dev \
+            zlib1g-dev \
+            libx11-dev
+
+      - name: Configure
+        run: |
+          cmake -S . -B build \
+            -Wno-dev \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DUSE_SYSTEM_LIBINDI=1 \
+            -DUSE_SYSTEM_GTEST=1 \
+            -DOPENSOURCE_ONLY=1
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        working-directory: build
+        run: ctest --output-on-failure

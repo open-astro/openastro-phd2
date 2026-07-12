@@ -331,10 +331,6 @@ public:
     void OnINDIDialog(wxCommandEvent& evt);
 #endif
     void OnPanelClose(wxAuiManagerEvent& evt);
-#if defined(V4L_CAMERA)
-    void OnSaveSettings(wxCommandEvent& evt);
-    void OnRestoreSettings(wxCommandEvent& evt);
-#endif
     void OnGraph(wxCommandEvent& evt);
     void OnStats(wxCommandEvent& evt);
     void OnToolBar(wxCommandEvent& evt);
@@ -643,8 +639,6 @@ enum
     MENU_IMPORTCAMCAL,
     MENU_INDICONFIG,
     MENU_INDIDIALOG,
-    MENU_V4LSAVESETTINGS,
-    MENU_V4LRESTORESETTINGS,
     BUTTON_GRAPH_LENGTH,
     BUTTON_GRAPH_HEIGHT,
     BUTTON_GRAPH_SETTINGS,

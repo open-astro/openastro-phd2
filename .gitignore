@@ -1,5 +1,7 @@
 TAGS
-/tmp*
+# Build dir wiped/recreated by run_*.sh / run_*.bat. Narrowed from /tmp* so it
+# doesn't swallow future files like tmp_notes.md.
+/tmp/
 /.vscode
 
 # Debian package build

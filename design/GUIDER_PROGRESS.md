@@ -1,5 +1,10 @@
 # openastro-guider — Progress
 
+> **Note:** This document tracks the **separate** `open-astro/openastro-guider`
+> project (a Linux-only, headless, Alpaca-only downstream fork). It is kept here
+> as reference/tracking material only and is **not** the roadmap for this
+> `openastro-phd2` repo.
+
 Single-page status. **Read this first on resume.** See `design/PHD2_HEADLESS_PLAYBOOK.md`
 for the full plan.
 

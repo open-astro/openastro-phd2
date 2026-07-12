@@ -79,6 +79,9 @@ public:
         m_data = bp->blob;
         m_size = bp->size;
         strncpy(m_format, bp->format, MAXINDIBLOBFMT);
+        // strncpy does not NUL-terminate when the source is exactly MAXINDIBLOBFMT
+        // long; force termination so later strcmp/FromAscii on m_format is safe.
+        m_format[MAXINDIBLOBFMT - 1] = '\0';
 
         bp->blob = nullptr;
         bp->size = 0;
@@ -126,11 +129,11 @@ private:
     // Cross-thread flags: INDI client callback thread sets, capture/connect thread polls.
     // std::atomic gives proper memory ordering; volatile alone does not.
     std::atomic<bool> stacking;
-    bool has_blob;
+    std::atomic<bool> has_blob;
     bool has_old_videoprop;
     bool first_frame;
     std::atomic<bool> modal;
-    bool ready;
+    std::atomic<bool> ready;
     wxByte m_bitsPerPixel;
     double PixSize;
     double PixSizeX;
@@ -238,8 +241,13 @@ void CameraINDI::ClearStatus()
 
     updateLastFrame(nullptr);
 
-    guide_active = false;
-    sync_cond.Broadcast(); // just in case worker thread was blocked waiting for guide pulse to complete
+    // Clear guide_active and signal under sync_lock so a worker thread blocked in
+    // sync_cond.Wait() cannot miss the wakeup (lost-wakeup race).
+    {
+        wxMutexLocker lck(sync_lock);
+        guide_active = false;
+        sync_cond.Broadcast(); // just in case worker thread was blocked waiting for guide pulse to complete
+    }
 }
 
 CapturedFrame *CameraINDI::waitFrame(unsigned long waitTime)
@@ -445,6 +453,11 @@ void CameraINDI::updateProperty(INDI::Property property)
         }
         else if (video_prop)
         {
+            // Hold sync_lock across the modal check and the StackImg dereference in
+            // StackStream. The capture thread nulls StackImg / clears modal under the
+            // same lock before letting its usImage go out of scope, so StackImg can
+            // never be used after the waiter returns (dangling-pointer race).
+            wxMutexLocker lck(sync_lock);
             if (modal && !stacking)
             {
                 CapturedFrame cf;
@@ -486,7 +499,7 @@ void CameraINDI::newProperty(INDI::Property property)
 
         if (PropName == INDICameraBlobName)
         {
-            has_blob = 1;
+            has_blob = true;
             // set option to receive blob and messages for the selected CCD
             setBLOBMode(B_ALSO, INDICameraName.mb_str(wxConvUTF8), INDICameraBlobName.mb_str(wxConvUTF8));
 
@@ -754,14 +767,18 @@ void CameraINDI::serverDisconnected(int exit_code)
     ClearStatus();
 
     // in case the connection lost we must reset the client socket
+    // Called on the INDI client thread; DisconnectWithAlert joins the INDI
+    // worker thread, so hop to the main thread to avoid self-joining.
     if (exit_code == -1)
-        DisconnectWithAlert(_("INDI server disconnected"), NO_RECONNECT);
+        PhdApp::ExecInMainThread([this]() { DisconnectWithAlert(_("INDI server disconnected"), NO_RECONNECT); });
 }
 
 void CameraINDI::removeDevice(INDI::BaseDevice dp)
 {
     ClearStatus();
-    DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT);
+    // Called on the INDI client thread; DisconnectWithAlert joins the INDI
+    // worker thread, so hop to the main thread to avoid self-joining.
+    PhdApp::ExecInMainThread([this]() { DisconnectWithAlert(_("INDI camera disconnected"), NO_RECONNECT); });
 }
 
 void CameraINDI::ShowPropertyDialog()
@@ -1236,10 +1253,14 @@ bool CameraINDI::Capture(usImage& img, const CaptureParams& captureParams)
         if (WorkerThread::TerminateRequested())
             return true;
 
-        // wait current frame is processed
-        while (stacking)
+        // Fence against the INDI client thread: acquiring sync_lock guarantees no
+        // StackStream is mid-flight, and clearing modal + StackImg under the lock
+        // ensures no further blob callback dereferences StackImg once img (below)
+        // goes out of scope.
         {
-            wxMilliSleep(loopwait);
+            wxMutexLocker lck(sync_lock);
+            modal = false;
+            StackImg = nullptr;
         }
 
         pFrame->StatusMsg(wxString::Format(_("%d frames"), StackFrames));

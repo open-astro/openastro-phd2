@@ -527,8 +527,16 @@ void IndiGui::OnUpdatePropertyFromThread(wxThreadEvent& event)
         auto nvp = property.getNumber();
         wxString devname = wxString::FromAscii(nvp->device);
         wxString propname = wxString::FromAscii(nvp->name);
-        IndiDev *indiDev = (IndiDev *) devlist[devname];
-        IndiProp *indiProp = (IndiProp *) indiDev->properties[propname];
+        // Use find() (not operator[], which would insert a null entry) and
+        // null-check before dereferencing; the property may have been removed.
+        auto devIt = devlist.find(devname);
+        if (devIt == devlist.end() || !devIt->second)
+            return;
+        IndiDev *indiDev = (IndiDev *) devIt->second;
+        auto propIt = indiDev->properties.find(propname);
+        if (propIt == indiDev->properties.end() || !propIt->second)
+            return;
+        IndiProp *indiProp = (IndiProp *) propIt->second;
         for (int i = 0; i < nvp->nnp; i++)
         {
             void *st = indiProp->ctrl[wxString::FromAscii(nvp->np[i].name)];
@@ -544,8 +552,16 @@ void IndiGui::OnUpdatePropertyFromThread(wxThreadEvent& event)
         auto tvp = property.getText();
         wxString devname = wxString::FromAscii(tvp->device);
         wxString propname = wxString::FromAscii(tvp->name);
-        IndiDev *indiDev = (IndiDev *) devlist[devname];
-        IndiProp *indiProp = (IndiProp *) indiDev->properties[propname];
+        // Use find() (not operator[], which would insert a null entry) and
+        // null-check before dereferencing; the property may have been removed.
+        auto devIt = devlist.find(devname);
+        if (devIt == devlist.end() || !devIt->second)
+            return;
+        IndiDev *indiDev = (IndiDev *) devIt->second;
+        auto propIt = indiDev->properties.find(propname);
+        if (propIt == indiDev->properties.end() || !propIt->second)
+            return;
+        IndiProp *indiProp = (IndiProp *) propIt->second;
         for (int i = 0; i < tvp->ntp; i++)
         {
             void *st = indiProp->ctrl[wxString::FromAscii(tvp->tp[i].name)];
@@ -562,8 +578,16 @@ void IndiGui::OnUpdatePropertyFromThread(wxThreadEvent& event)
         wxString devname = wxString::FromAscii(svp->device);
         wxString propname = wxString::FromAscii(svp->name);
         int swtype = GetSwitchType(svp);
-        IndiDev *indiDev = (IndiDev *) devlist[devname];
-        IndiProp *indiProp = (IndiProp *) indiDev->properties[propname];
+        // Use find() (not operator[], which would insert a null entry) and
+        // null-check before dereferencing; the property may have been removed.
+        auto devIt = devlist.find(devname);
+        if (devIt == devlist.end() || !devIt->second)
+            return;
+        IndiDev *indiDev = (IndiDev *) devIt->second;
+        auto propIt = indiDev->properties.find(propname);
+        if (propIt == indiDev->properties.end() || !propIt->second)
+            return;
+        IndiProp *indiProp = (IndiProp *) propIt->second;
         switch (swtype)
         {
         case SWITCH_COMBOBOX:
@@ -636,8 +660,11 @@ void IndiGui::SetButtonEvent(wxCommandEvent& event)
                 // Hold the wxCharBuffer in a named local; mb_str() returns a temporary,
                 // so calling .data() inline would leave a dangling pointer to freed memory.
                 wxCharBuffer buf = entry->GetLineText(0).mb_str();
-                size_t buf_size = strlen(tvp->tp[i].text) + 1;
-                snprintf(tvp->tp[i].text, buf_size, "%s", buf.data());
+                // tvp->tp[i].text is a heap buffer sized to the previous value.
+                // Sizing the write from the OLD length truncated longer values and
+                // made empty-initial text unsettable. IUSaveText is the libindi
+                // idiom: it frees/reallocates the buffer to fit the new string.
+                IUSaveText(&tvp->tp[i], buf.data());
             }
         }
         sendNewText(tvp);

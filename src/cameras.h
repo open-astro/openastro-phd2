@@ -34,11 +34,6 @@
 
 #ifndef CAMERAS_INCLUDED
 
-/* Current issues:
-- Need to fix the LE webcams to either not need wxVidCapLib or need a good way
-  to detect or package this
-  */
-
 // phd2-alpaca build: Alpaca + INDI on all platforms; ASCOM on Windows only.
 // ASCOM_CAMERA is a thin late-bound COM shim over user-installed ASCOM camera
 // drivers (no vendor SDKs are bundled), mirroring how scopes.h gates GUIDE_ASCOM.

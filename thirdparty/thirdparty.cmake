@@ -220,6 +220,11 @@ else()
     FetchContent_Declare(
       googletest
       URL https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz
+      # Integrity pin for the exact v1.17.0 archive above. Without URL_HASH,
+      # FetchContent accepts whatever bytes the URL returns, so a compromised
+      # or corrupted download would be built silently. Verify with:
+      #   curl -L https://github.com/google/googletest/archive/refs/tags/v1.17.0.tar.gz | sha256sum
+      URL_HASH SHA256=65fab701d9829d38cb77c14acdc431d2108bfdbf8979e40eb8ae567edf10b27c
   )
   # For Windows: Prevent overriding the parent project's compiler/linker settings
   set(gtest_force_shared_crt ON CACHE BOOL "" FORCE)
@@ -269,7 +274,7 @@ elseif(${CMAKE_SYSTEM_NAME} MATCHES "FreeBSD")
                   OUTPUT_VARIABLE wxWidgets_LIBRARIES
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
   separate_arguments(${wxWidgets_LIBRARIES})
-  execute_process(COMMAND ${wxWidgets_CONFIG_EXECUTABLE} --cflags ${wxRwxRequiredLibs}
+  execute_process(COMMAND ${wxWidgets_CONFIG_EXECUTABLE} --cflags ${wxRequiredLibs}
                   OUTPUT_VARIABLE wxWidgets_CXXFLAGS
                   OUTPUT_STRIP_TRAILING_WHITESPACE)
   separate_arguments(wxWidgets_CXX_FLAGS UNIX_COMMAND "${wxWidgets_CXXFLAGS}")

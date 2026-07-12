@@ -61,19 +61,45 @@ if (-not $cmakePath) {
 }
 Write-Host "  CMake: $cmakePath" -ForegroundColor Green
 
-# Check InnoSetup
-$isccPath = "C:\Program Files (x86)\Inno Setup 5\ISCC.exe"
-if (-not (Test-Path $isccPath)) {
-    $isccPath = "C:\Program Files\Inno Setup 5\ISCC.exe"
-    if (-not (Test-Path $isccPath)) {
-        Write-Error "InnoSetup not found. Please install Inno Setup 5 to one of the default locations."
-        Write-Host "  Expected locations:" -ForegroundColor Yellow
-        Write-Host "    C:\Program Files (x86)\Inno Setup 5\ISCC.exe" -ForegroundColor Yellow
-        Write-Host "    C:\Program Files\Inno Setup 5\ISCC.exe" -ForegroundColor Yellow
-        exit 1
-    }
+# Check InnoSetup. Prefer Inno Setup 6 (current release) over the legacy 5,
+# and look under both the 64-bit and 32-bit Program Files trees.
+$isccCandidates = @(
+    "C:\Program Files (x86)\Inno Setup 6\ISCC.exe",
+    "C:\Program Files\Inno Setup 6\ISCC.exe",
+    "C:\Program Files (x86)\Inno Setup 5\ISCC.exe",
+    "C:\Program Files\Inno Setup 5\ISCC.exe"
+)
+$isccPath = $isccCandidates | Where-Object { Test-Path $_ } | Select-Object -First 1
+if (-not $isccPath) {
+    Write-Error "InnoSetup not found. Please install Inno Setup 6 (preferred) or 5 to a default location."
+    Write-Host "  Searched:" -ForegroundColor Yellow
+    foreach ($c in $isccCandidates) { Write-Host "    $c" -ForegroundColor Yellow }
+    exit 1
 }
 Write-Host "  InnoSetup: $isccPath" -ForegroundColor Green
+
+# Check WXWIN. thirdparty.cmake hard-fails the configure step unless WXWIN
+# points at a wxWidgets install with a static vc_x64_lib build. Validate it
+# here so the failure is an actionable message up front rather than a CMake
+# error deep in the configure.
+if (-not $env:WXWIN) {
+    Write-Error "WXWIN is not set. Point it at your wxWidgets install (a static x64 build)."
+    Write-Host "  Expected layout:" -ForegroundColor Yellow
+    Write-Host "    %WXWIN%\include\wx\..." -ForegroundColor Yellow
+    Write-Host "    %WXWIN%\lib\vc_x64_lib\   (static Release/Debug libs)" -ForegroundColor Yellow
+    exit 1
+}
+if (-not (Test-Path $env:WXWIN -PathType Container)) {
+    Write-Error "WXWIN is set to '$env:WXWIN' but that is not an existing directory."
+    exit 1
+}
+$wxLibDir = Join-Path $env:WXWIN "lib\vc_x64_lib"
+if (-not (Test-Path $wxLibDir -PathType Container)) {
+    Write-Error "WXWIN='$env:WXWIN' does not contain the expected static x64 libs at 'lib\vc_x64_lib'."
+    Write-Host "  Build wxWidgets 3.2 as a static x64 library (vc_x64_lib), or fix WXWIN." -ForegroundColor Yellow
+    exit 1
+}
+Write-Host "  WXWIN: $env:WXWIN" -ForegroundColor Green
 
 # Create build directory
 Write-Host "Creating build directory: $BuildDir" -ForegroundColor Yellow

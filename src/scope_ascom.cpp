@@ -1119,6 +1119,12 @@ bool ScopeASCOM::SlewToCoordinatesAsync(double ra, double dec)
 void ScopeASCOM::AbortSlew()
 {
     GITObjRef scope(m_gitEntry);
+    if (!scope.IDisp())
+    {
+        Debug.AddLine("ASCOM Scope: cannot abort slew, driver not registered/connected");
+        return;
+    }
+
     Variant vRes;
     scope.InvokeMethod(&vRes, L"AbortSlew");
 }
