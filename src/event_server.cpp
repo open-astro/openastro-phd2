@@ -4871,7 +4871,8 @@ static std::string lower_ascii(const std::string& s)
 
 static wxString url_decode(const std::string& s)
 {
-    auto hex_val = [](char c) -> int {
+    auto hex_val = [](char c) -> int
+    {
         if (c >= '0' && c <= '9')
             return c - '0';
         if (c >= 'a' && c <= 'f')

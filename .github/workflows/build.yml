@@ -1,9 +1,10 @@
 name: Build and Test
 
 # Baseline CI: configure, build, and run the test suite on a Debian/Ubuntu
-# runner. This is a starting point — it uses the distro's packaged libindi
-# (Ubuntu ships libindi-dev) rather than the from-source INDI path in
-# run_deb.sh, and builds open-source-only (no proprietary camera SDKs).
+# runner. It installs libindi 2.x from the official INDI PPA (Ubuntu's own
+# universe still ships 1.9.9, below the required 2.0) rather than the
+# from-source INDI path in run_deb.sh, and builds open-source-only (no
+# proprietary camera SDKs).
 on:
   push:
     branches: [main]
@@ -32,6 +33,9 @@ jobs:
       # so we link the distro packages instead of building them from source.
       - name: Install build dependencies
         run: |
+          # Ubuntu's universe ships libindi 1.9.9, but the project requires
+          # INDI >= 2.0. The official INDI PPA provides current libindi 2.x.
+          sudo add-apt-repository -y ppa:mutlaqja/ppa
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             build-essential \
