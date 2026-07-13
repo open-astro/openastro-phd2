@@ -150,6 +150,16 @@ jobs:
         run: |
           $zip = Join-Path $env:RUNNER_TEMP "wx.zip"
           Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v$env:WX_VERSION/wxWidgets-$env:WX_VERSION.zip" -OutFile $zip
+          # Pin the archive content, not just the URL: a tampered upload or
+          # CDN compromise fails loudly instead of being cached into every
+          # future release build. Hash computed from the official v3.2.8
+          # release asset (wxWidgets publishes no checksum file, so this is
+          # trust-on-first-use); recompute and update when bumping WX_VERSION.
+          $expectedHash = "0f781c17f4a50f42b1533d6e149d6e87bb47dc51c3992144918a9c231d5615a2"
+          $actualHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "wxWidgets download hash mismatch: expected $expectedHash, got $actualHash"
+          }
           # The Windows release zip is rootless: include/, src/, build/ sit at
           # the archive root, so extracting into WXWIN gives the layout
           # build-exe.ps1 expects.
@@ -178,11 +188,12 @@ jobs:
     name: macOS DMG (Apple Silicon)
     needs: preflight
     # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if this
-    # image label is ever unavailable (job stuck on "waiting for a runner"),
-    # change it to macos-15 — nothing else needs editing, because
-    # ALLOW_OLD_MACOS below already opts in to the script's documented
+    # image label is ever unavailable, the job queues forever ("waiting for
+    # a runner") — swap the two runs-on lines below and nothing else,
+    # because ALLOW_OLD_MACOS already opts in to the script's documented
     # older-macOS CI override (a no-op when the runner really is macOS 26).
     runs-on: macos-26
+    # runs-on: macos-15  # <- fallback if the macos-26 label is unavailable
     env:
       ALLOW_OLD_MACOS: 1
     steps:

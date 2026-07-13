@@ -64,14 +64,23 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
+          set -o pipefail
+          ret=0
           out=$(git diff -U0 "$base"..HEAD -- 'src/*.cpp' 'src/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | clang-tidy-diff-18.py -p1 -path build -quiet \
-                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters')
+                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters') || ret=$?
           echo "$out"
           if echo "$out" | grep -qE '(warning|error): .*\[(bugprone|performance|clang-analyzer)'; then
             echo "::error::clang-tidy found issues on the changed lines (see above)."
+            exit 1
+          fi
+          # A nonzero exit with no recognized diagnostic means the tool
+          # itself failed (crash, bad invocation) — fail rather than let a
+          # broken gate pass green.
+          if [ "$ret" -ne 0 ]; then
+            echo "::error::clang-tidy-diff exited $ret without reporting diagnostics — tool failure, not a clean pass."
             exit 1
           fi
 
