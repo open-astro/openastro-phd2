@@ -56,17 +56,24 @@ jobs:
       # never fail the PR. Check set: bugprone + performance, plus the Clang
       # Static Analyzer (clang-analyzer-*) for path-sensitive analysis —
       # deeper than the lint checks, still bounded by the diff size.
+      # clang-tidy-diff-18.py has no -warnings-as-errors flag (unrecognized in
+      # LLVM 18), so gate on the output: any diagnostic from the enabled check
+      # families within the changed lines fails the job.
       - name: Run clang-tidy on changed lines
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
-          git diff -U0 "$base"..HEAD -- 'src/*.cpp' 'src/*.h' \
+          out=$(git diff -U0 "$base"..HEAD -- 'src/*.cpp' 'src/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | clang-tidy-diff-18.py -p1 -path build -quiet \
-                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters' \
-                -warnings-as-errors='bugprone-*,performance-*,clang-analyzer-*'
+                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters')
+          echo "$out"
+          if echo "$out" | grep -qE '(warning|error): .*\[(bugprone|performance|clang-analyzer)'; then
+            echo "::error::clang-tidy found issues on the changed lines (see above)."
+            exit 1
+          fi
 
   cppcheck:
     name: cppcheck (changed files)
