@@ -31,8 +31,25 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Fail fast before any build minutes are spent: manual runs must start
+  # from main. Without this, a workflow_dispatch from a feature branch would
+  # produce a draft release whose tag - once published - points at a
+  # non-main commit.
+  preflight:
+    name: Ref guard
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Require tag or main
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "tag" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Release runs must start from a v* tag or the main branch (got $GITHUB_REF)."
+            exit 1
+          fi
+          echo "Ref OK: $GITHUB_REF"
+
   linux-deb:
     name: Debian package (${{ matrix.arch }})
+    needs: preflight
     strategy:
       fail-fast: false
       matrix:
@@ -100,6 +117,7 @@ jobs:
 
   windows:
     name: Windows x64 installer
+    needs: preflight
     # Floating label: runner images cannot be SHA-pinned (GitHub limitation),
     # so this job inherits image updates (VS toolchain, Inno Setup version).
     # Accepted gap; the Linux legs pin to ubuntu-24.04 to protect the INDI
@@ -158,6 +176,7 @@ jobs:
 
   macos:
     name: macOS DMG (Apple Silicon)
+    needs: preflight
     # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if this
     # image label is ever unavailable (job stuck on "waiting for a runner"),
     # change it to macos-15 — nothing else needs editing, because
@@ -224,7 +243,15 @@ jobs:
           echo "Version: $VERSION  Tag: $TAG"
           ls -la dist/
           if gh release view "$TAG" > /dev/null 2>&1; then
-            echo "Release $TAG exists; replacing artifacts"
+            # Only replace assets on a DRAFT. A published release is live for
+            # users; silently swapping its binaries would be a supply-chain
+            # hazard. Bump the version (new tag) instead.
+            isDraft=$(gh release view "$TAG" --json isDraft --jq .isDraft)
+            if [ "$isDraft" != "true" ]; then
+              echo "::error::Release $TAG is already published; refusing to replace its assets. Cut a new version instead."
+              exit 1
+            fi
+            echo "Draft release $TAG exists; replacing artifacts"
             gh release upload "$TAG" dist/* --clobber
           else
             gh release create "$TAG" \

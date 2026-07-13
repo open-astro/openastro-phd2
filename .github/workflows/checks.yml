@@ -90,6 +90,12 @@ jobs:
 
       # Only the C++ files the PR touched. `--error-exitcode=1` fails on
       # error-severity findings; warnings are printed but advisory.
+      # Known limitation: runs without -I include paths or a compile
+      # database, so project-macro-dependent code can yield false
+      # positives/negatives (the missingIncludeSystem/unknownMacro
+      # suppressions absorb the noise). The compile-database-backed deep
+      # pass is the clang-tidy job above; cppcheck is a cheap second
+      # opinion, not the primary gate.
       - name: Run cppcheck on changed files
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
@@ -242,10 +248,13 @@ jobs:
       # Static security audit of the GitHub Actions workflows themselves
       # (unpinned actions, credential persistence, template injection, ...).
       # --offline skips audits that need the GitHub API, so no token is used.
-      # Per-finding ignores live in .github/zizmor.yml. Version-pinned for the
-      # same reason the workflows SHA-pin their actions: an unpinned linter
-      # can change what it enforces (or its own supply chain) under us.
+      # Per-finding ignores live in .github/zizmor.yml. Hash-pinned for the
+      # same reason the workflows SHA-pin their actions: version pinning
+      # alone would still trust whatever PyPI serves for that version, so
+      # pip verifies the exact wheel (linux x86_64 — matches this runner).
       - name: Run zizmor
         run: |
-          pipx install zizmor==1.26.1
-          zizmor --offline .github/workflows/
+          printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef' > "$RUNNER_TEMP/zizmor-req.txt"
+          python3 -m venv "$RUNNER_TEMP/zizmor-venv"
+          "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r "$RUNNER_TEMP/zizmor-req.txt"
+          "$RUNNER_TEMP/zizmor-venv/bin/zizmor" --offline .github/workflows/
