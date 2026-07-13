@@ -284,7 +284,14 @@ jobs:
               exit 1
             fi
             echo "Draft release $TAG exists; replacing artifacts"
-            gh release upload "$TAG" dist/* --clobber
+            # --clobber only overwrites same-named assets; delete everything
+            # first so a re-run can't leave stale artifacts from a previous
+            # attempt mixed in with fresh ones.
+            gh release view "$TAG" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+              echo "Deleting stale asset: $asset"
+              gh release delete-asset "$TAG" "$asset" --yes
+            done
+            gh release upload "$TAG" dist/*
           else
             gh release create "$TAG" \
               --draft \

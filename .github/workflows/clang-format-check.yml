@@ -20,8 +20,9 @@ jobs:
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       with:
         persist-credentials: false
-        # git clang-format needs the merge base commit locally on PRs.
-        fetch-depth: 0
+        # git clang-format needs the merge base commit locally on PRs; the
+        # push-triggered repo-wide check needs only the tip.
+        fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
 
     - name: Install clang-format
       run: sudo apt-get update -q && sudo apt-get install -y -q clang-format-18

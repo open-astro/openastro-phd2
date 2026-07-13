@@ -64,9 +64,8 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
-          set -o pipefail
           ret=0
-          out=$(git diff -U0 "$base"..HEAD -- 'src/*.cpp' 'src/*.h' \
+          out=$(git diff -U0 "$base"..HEAD -- 'src/**/*.cpp' 'src/**/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | clang-tidy-diff-18.py -p1 -path build -quiet \
@@ -115,7 +114,7 @@ jobs:
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
           mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base"..HEAD \
-            -- 'src/*.cpp' 'src/*.h' 'contributions/MPI_IS_gaussian_process/**/*.cpp' \
+            -- 'src/**/*.cpp' 'src/**/*.h' 'contributions/MPI_IS_gaussian_process/**/*.cpp' \
                'contributions/MPI_IS_gaussian_process/**/*.h')
           if [ ${#files[@]} -eq 0 ]; then
             echo "No C++ files changed; skipping."
