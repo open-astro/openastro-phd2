@@ -32,10 +32,20 @@ jobs:
         BASE_SHA: ${{ github.event.pull_request.base.sha }}
       run: |
         base=$(git merge-base "$BASE_SHA" HEAD)
-        out=$(git clang-format-18 --diff "$base" HEAD -- src contributions/MPI_IS_gaussian_process || true)
+        # git clang-format exits non-zero when it wants changes, so the exit
+        # code alone can't distinguish "formatting needed" from "tool broke".
+        # Capture it, gate on the diff output, then treat any leftover
+        # non-zero exit (no diff produced) as a tool failure rather than
+        # letting a broken gate pass green.
+        ret=0
+        out=$(git clang-format-18 --diff "$base" HEAD -- src contributions/MPI_IS_gaussian_process) || ret=$?
         echo "$out"
         if echo "$out" | grep -q '^diff --git'; then
           echo "::error::Changed lines are not clang-format clean (see diff above)."
+          exit 1
+        fi
+        if [ "$ret" -ne 0 ]; then
+          echo "::error::git clang-format exited $ret without producing a diff — tool failure, not a clean pass."
           exit 1
         fi
 

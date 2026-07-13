@@ -145,6 +145,12 @@ jobs:
           for f in build/run-clang-format build/get_phd_version build/build-win; do
             [ -f "$f" ] && head -1 "$f" | grep -q '^#!.*sh' && files+=("$f")
           done
+          # Zero files would make shellcheck print usage and exit non-zero —
+          # a spurious failure, not a finding.
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts tracked; skipping."
+            exit 0
+          fi
           printf 'Checking: %s\n' "${files[@]}"
           shellcheck --severity=error "${files[@]}"
 

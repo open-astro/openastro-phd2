@@ -248,6 +248,13 @@ jobs:
           fi
           if [ "$GITHUB_REF_TYPE" = "tag" ]; then
             TAG="$GITHUB_REF_NAME"
+            # The tag names the release but every installer stamped its
+            # version from version.md — if they disagree, the draft would
+            # carry mismatched tag/title/artifacts. Catch it here.
+            if [ "$TAG" != "v$VERSION" ]; then
+              echo "::error::Tag $TAG does not match version.md ($VERSION). Bump version.md (use /release) before tagging."
+              exit 1
+            fi
           else
             TAG="v$VERSION"
           fi
