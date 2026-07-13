@@ -318,11 +318,13 @@ jobs:
           fi
           echo "Version: $VERSION  Tag: $TAG"
           ls -la dist/
-          if gh release view "$TAG" > /dev/null 2>&1; then
+          # Single atomic view call: checking existence and draft status in
+          # two separate calls would race a human publishing the draft
+          # between them (TOCTOU).
+          if isDraft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
             # Only replace assets on a DRAFT. A published release is live for
             # users; silently swapping its binaries would be a supply-chain
             # hazard. Bump the version (new tag) instead.
-            isDraft=$(gh release view "$TAG" --json isDraft --jq .isDraft)
             if [ "$isDraft" != "true" ]; then
               echo "::error::Release $TAG is already published; refusing to replace its assets. Cut a new version instead."
               exit 1

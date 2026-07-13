@@ -56,15 +56,14 @@ jobs:
             -DOPENSOURCE_ONLY=1
 
       # Scope to the lines this PR changed so pre-existing findings elsewhere
-      # never fail the PR. Check set: bugprone + performance, plus the Clang
-      # Static Analyzer (clang-analyzer-*) for path-sensitive analysis —
-      # deeper than the lint checks, still bounded by the diff size.
-      # Runtime ceiling: the analyzer is the heavy part — expect roughly a
-      # minute per touched translation unit, several minutes for a PR that
-      # touches the Eigen-heavy gaussian-process TUs. Acceptable for a PR
-      # gate; if it ever creeps past ~10 min routinely, demote
-      # clang-analyzer-* to the post-merge tier and keep the cheap lints
-      # here.
+      # never fail the PR. Check set: bugprone + performance lints only —
+      # cheap enough to stay well inside the job timeout even on a PR that
+      # touches many TUs. Deep path-sensitive analysis (the Clang Static
+      # Analyzer's territory) is deliberately NOT here: it costs on the
+      # order of a minute per touched TU (worse on the Eigen-heavy
+      # gaussian-process TUs), which risks systematic timeout failures on
+      # large PRs; CodeQL (codeql.yml) covers that depth post-merge and
+      # weekly instead.
       # clang-tidy-diff-18.py has no -warnings-as-errors flag (unrecognized in
       # LLVM 18), so gate on the output: any diagnostic from the enabled check
       # families within the changed lines fails the job.
@@ -94,13 +93,15 @@ jobs:
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | python3 "$CTD" -p1 -path build -quiet \
-                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters' 2>&1) || ret=$?
+                -checks='-*,bugprone-*,performance-*,-bugprone-easily-swappable-parameters' 2>&1) || ret=$?
           echo "$out"
-          # Match any diagnostic line, not just ones carrying a recognized
-          # check name in brackets — with -checks scoped above, every
-          # diagnostic here is one of ours, and format drift in how the
-          # check name is printed must not silently clear the gate.
-          if echo "$out" | grep -qE '(warning|error): '; then
+          # Match diagnostic lines by their file:line:col anchor rather than
+          # any bare "warning:/error:" substring, so stray tool chatter or
+          # system-header warnings leaking into the merged output can't fail
+          # the gate; with -checks scoped above, every anchored diagnostic
+          # is one of ours. The nonzero-exit backstop below still catches
+          # tool failures that produce no anchored diagnostics.
+          if echo "$out" | grep -qE '^[^ :]+:[0-9]+:[0-9]+: (warning|error): '; then
             echo "::error::clang-tidy found issues on the changed lines (see above)."
             exit 1
           fi
@@ -348,7 +349,11 @@ jobs:
           # line of the wxWidgets cache step in release.yml. Assert the pin is
           # still accurate so an edit that shifts lines fails HERE with an
           # actionable message, instead of the ignore silently un-matching.
-          actual=$(grep -n "actions/cache@" .github/workflows/release.yml | head -1 | cut -d: -f1)
+          # Anchor on the wxWidgets cache step's name, not just the first
+          # actions/cache in the file, so a future cache step added earlier
+          # (e.g. ccache) can't make the pin look valid against the wrong
+          # line.
+          actual=$(awk '/Cache wxWidgets/{f=1} f && /actions\/cache@/{print NR; exit}' .github/workflows/release.yml)
           pinned=$(grep -oE 'release\.yml:[0-9]+' .github/zizmor.yml | head -1 | cut -d: -f2)
           if [ "$actual" != "$pinned" ]; then
             echo "::error::.github/zizmor.yml pins release.yml:$pinned but the cache step is now at line $actual — update the pinned line in .github/zizmor.yml."
