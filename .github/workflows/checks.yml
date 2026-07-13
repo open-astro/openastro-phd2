@@ -155,7 +155,7 @@ jobs:
           # live, so new helper scripts are covered automatically.
           while IFS= read -r f; do
             case "${f##*/}" in *.*) continue ;; esac
-            [ -f "$f" ] && head -1 "$f" | grep -q '^#!.*\bsh' && files+=("$f")
+            [ -f "$f" ] && head -1 "$f" | grep -qE '^#!.*\b(sh|bash|dash|ksh|zsh)\b' && files+=("$f")
           done < <(git ls-files)
           # Zero files would make shellcheck print usage and exit non-zero —
           # a spurious failure, not a finding.

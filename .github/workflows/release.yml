@@ -172,7 +172,11 @@ jobs:
           # CDN compromise fails loudly instead of being cached into every
           # future release build. Hash computed from the official v3.2.8
           # release asset (wxWidgets publishes no checksum file, so this is
-          # trust-on-first-use); recompute and update when bumping WX_VERSION.
+          # trust-on-first-use). When bumping WX_VERSION, recompute with:
+          #   curl -sLO https://github.com/wxWidgets/wxWidgets/releases/download/v<VER>/wxWidgets-<VER>.zip
+          #   sha256sum wxWidgets-<VER>.zip
+          # and sanity-check the zip opens and has include/ + build/msw at
+          # its root before updating $expectedHash below.
           $expectedHash = "0f781c17f4a50f42b1533d6e149d6e87bb47dc51c3992144918a9c231d5615a2"
           $actualHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
           if ($actualHash -ne $expectedHash) {
