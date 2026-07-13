@@ -20,9 +20,14 @@ on:
 permissions:
   contents: read
 
+# Never cancel a running sanitizer pass: the TSan job repeats the suite
+# (--repeat until-fail:5) and needs a complete pass to be meaningful — rapid
+# successive pushes to main would otherwise cancel/restart it perpetually and
+# a race that only trips on repeat 4 would never be observed. Queued runs
+# coalesce on the group instead.
 concurrency:
   group: sanitizers-${{ github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: false
 
 jobs:
   sanitize:

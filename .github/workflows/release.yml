@@ -115,7 +115,11 @@ jobs:
           mkdir -p dist
           mv ../openastro-phd2-*-${{ matrix.arch }}.deb dist/
           if [ "${{ matrix.arch }}" = "amd64" ]; then
-            mv ../phd2-alpaca-*-all.deb dist/ || true
+            if ls ../phd2-alpaca-*-all.deb > /dev/null 2>&1; then
+              mv ../phd2-alpaca-*-all.deb dist/
+            else
+              echo "::warning::No transitional phd2-alpaca package found — releasing without it."
+            fi
           fi
           ls -la dist/
 
@@ -207,8 +211,11 @@ jobs:
     # macos-15 from the runner dropdown — no code edit needed, because
     # ALLOW_OLD_MACOS already opts in to the script's documented
     # older-macOS CI override (a no-op when the runner really is macOS 26).
-    # Tag-triggered runs have no inputs and default to macos-26.
-    runs-on: ${{ inputs.macos_runner || 'macos-26' }}
+    # Tag-triggered runs have no inputs; they fall back to the MACOS_RUNNER
+    # repository variable (Settings -> Secrets and variables -> Actions ->
+    # Variables) if set, else macos-26 — so even tag releases can be
+    # redirected to another runner without a code edit.
+    runs-on: ${{ inputs.macos_runner || vars.MACOS_RUNNER || 'macos-26' }}
     # If the runner label is unknown, the job never gets a runner: GitHub
     # fails it after this queue timeout instead of blocking the release
     # forever (timeout-minutes also caps queue wait for unschedulable jobs).
