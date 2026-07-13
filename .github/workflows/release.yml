@@ -38,6 +38,7 @@ jobs:
   preflight:
     name: Ref guard
     runs-on: ubuntu-24.04
+    timeout-minutes: 5
     steps:
       - name: Require tag or main
         run: |
@@ -59,6 +60,9 @@ jobs:
           - runner: ubuntu-24.04-arm
             arch: arm64
     runs-on: ${{ matrix.runner }}
+    # Generous ceiling over the observed ~30-45 min build; surfaces a hung
+    # run as a failure instead of an open-ended stall.
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -123,6 +127,8 @@ jobs:
     # Accepted gap; the Linux legs pin to ubuntu-24.04 to protect the INDI
     # PPA dependency, but this job's tools are all version-agnostic.
     runs-on: windows-latest
+    # Covers the cold path (wx build ~40 min + vcpkg builds opencv & friends).
+    timeout-minutes: 300
     env:
       WX_VERSION: 3.2.8
       WXWIN: C:\wxWidgets
@@ -194,6 +200,10 @@ jobs:
     # older-macOS CI override (a no-op when the runner really is macOS 26).
     runs-on: macos-26
     # runs-on: macos-15  # <- fallback if the macos-26 label is unavailable
+    # If the runner label is unknown, the job never gets a runner: GitHub
+    # fails it after this queue timeout instead of blocking the release
+    # forever (timeout-minutes also caps queue wait for unschedulable jobs).
+    timeout-minutes: 90
     env:
       ALLOW_OLD_MACOS: 1
     steps:
@@ -221,6 +231,7 @@ jobs:
     name: Draft GitHub release
     needs: [linux-deb, windows, macos]
     runs-on: ubuntu-24.04
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -237,6 +248,9 @@ jobs:
       # Tag-triggered runs use the pushed tag; manual runs derive v<version>
       # from version.md. Either way the release is created as a DRAFT — review
       # the artifacts and notes on the Releases page, then publish by hand.
+      # Note on tagging: `gh release create --draft` does NOT create the git
+      # tag — GitHub materializes the tag (at --target) only when the draft
+      # is published, so an abandoned/deleted draft leaves no tag behind.
       - name: Create or update draft release
         env:
           GH_TOKEN: ${{ github.token }}

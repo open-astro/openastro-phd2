@@ -72,7 +72,11 @@ jobs:
             | clang-tidy-diff-18.py -p1 -path build -quiet \
                 -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters') || ret=$?
           echo "$out"
-          if echo "$out" | grep -qE '(warning|error): .*\[(bugprone|performance|clang-analyzer)'; then
+          # Match any diagnostic line, not just ones carrying a recognized
+          # check name in brackets — with -checks scoped above, every
+          # diagnostic here is one of ours, and format drift in how the
+          # check name is printed must not silently clear the gate.
+          if echo "$out" | grep -qE '(warning|error): '; then
             echo "::error::clang-tidy found issues on the changed lines (see above)."
             exit 1
           fi
@@ -142,9 +146,12 @@ jobs:
       - name: Run ShellCheck
         run: |
           mapfile -t files < <(git ls-files '*.sh')
-          for f in build/run-clang-format build/get_phd_version build/build-win; do
-            [ -f "$f" ] && head -1 "$f" | grep -q '^#!.*sh' && files+=("$f")
-          done
+          # Also pick up extensionless scripts by shebang, wherever they
+          # live, so new helper scripts are covered automatically.
+          while IFS= read -r f; do
+            case "${f##*/}" in *.*) continue ;; esac
+            [ -f "$f" ] && head -1 "$f" | grep -q '^#!.*\bsh' && files+=("$f")
+          done < <(git ls-files)
           # Zero files would make shellcheck print usage and exit non-zero —
           # a spurious failure, not a finding.
           if [ ${#files[@]} -eq 0 ]; then
@@ -266,10 +273,12 @@ jobs:
       # Per-finding ignores live in .github/zizmor.yml. Hash-pinned for the
       # same reason the workflows SHA-pin their actions: version pinning
       # alone would still trust whatever PyPI serves for that version, so
-      # pip verifies the exact wheel (linux x86_64 — matches this runner).
+      # pip verifies the exact wheel. Both linux hashes are listed (pip
+      # picks the one matching the platform) so moving this job to an arm
+      # runner doesn't break the hash check.
       - name: Run zizmor
         run: |
-          printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef' > "$RUNNER_TEMP/zizmor-req.txt"
+          printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef --hash=sha256:bb7ebbe565a3742eb49a590352127ad549bb122b9b4ff9424ebab7525fa3b6b6' > "$RUNNER_TEMP/zizmor-req.txt"
           python3 -m venv "$RUNNER_TEMP/zizmor-venv"
           "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r "$RUNNER_TEMP/zizmor-req.txt"
           "$RUNNER_TEMP/zizmor-venv/bin/zizmor" --offline .github/workflows/
