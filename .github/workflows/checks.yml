@@ -235,8 +235,10 @@ jobs:
       # Static security audit of the GitHub Actions workflows themselves
       # (unpinned actions, credential persistence, template injection, ...).
       # --offline skips audits that need the GitHub API, so no token is used.
-      # Per-finding ignores live in .github/zizmor.yml.
+      # Per-finding ignores live in .github/zizmor.yml. Version-pinned for the
+      # same reason the workflows SHA-pin their actions: an unpinned linter
+      # can change what it enforces (or its own supply chain) under us.
       - name: Run zizmor
         run: |
-          pipx install zizmor
+          pipx install zizmor==1.26.1
           zizmor --offline .github/workflows/

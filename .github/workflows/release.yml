@@ -100,6 +100,10 @@ jobs:
 
   windows:
     name: Windows x64 installer
+    # Floating label: runner images cannot be SHA-pinned (GitHub limitation),
+    # so this job inherits image updates (VS toolchain, Inno Setup version).
+    # Accepted gap; the Linux legs pin to ubuntu-24.04 to protect the INDI
+    # PPA dependency, but this job's tools are all version-agnostic.
     runs-on: windows-latest
     env:
       WX_VERSION: 3.2.8
@@ -155,9 +159,13 @@ jobs:
   macos:
     name: macOS DMG (Apple Silicon)
     # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if this
-    # image label is unavailable, fall back to macos-15 and export
-    # ALLOW_OLD_MACOS=1 (the script's documented CI override).
+    # image label is ever unavailable (job stuck on "waiting for a runner"),
+    # change it to macos-15 — nothing else needs editing, because
+    # ALLOW_OLD_MACOS below already opts in to the script's documented
+    # older-macOS CI override (a no-op when the runner really is macOS 26).
     runs-on: macos-26
+    env:
+      ALLOW_OLD_MACOS: 1
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
