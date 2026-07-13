@@ -24,6 +24,9 @@ jobs:
     # Only meaningful for PRs: on main pushes there is no diff to scope to.
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    # The analyzer can take several minutes on Eigen-heavy TUs; a stall must
+    # not hold the PR gate for GitHub's 6-hour default.
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -113,6 +116,7 @@ jobs:
     name: cppcheck (changed files)
     if: github.event_name == 'pull_request'
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -134,16 +138,23 @@ jobs:
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
+          set -euo pipefail
           base=$(git merge-base "$BASE_SHA" HEAD)
-          mapfile -t files < <(git diff --name-only --diff-filter=ACMR "$base"..HEAD \
+          # Collect via command substitution, not mapfile-from-process-
+          # substitution: set -e reliably aborts on a failed git diff this
+          # way, whereas a failing process substitution can be silently
+          # ignored (bash-version-dependent).
+          files_raw=$(git diff --name-only --diff-filter=ACMR "$base"..HEAD \
             -- 'src/**/*.cpp' 'src/**/*.h' 'contributions/MPI_IS_gaussian_process/**/*.cpp' \
                'contributions/MPI_IS_gaussian_process/**/*.h')
-          if [ ${#files[@]} -eq 0 ]; then
+          if [ -z "$files_raw" ]; then
             echo "No C++ files changed; skipping."
             exit 0
           fi
+          mapfile -t files <<< "$files_raw"
           printf 'Checking: %s\n' "${files[@]}"
           cppcheck \
+            -I src \
             --enable=warning,performance,portability \
             --inline-suppr \
             --suppress=missingIncludeSystem \
@@ -155,6 +166,7 @@ jobs:
   shellcheck:
     name: ShellCheck
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -166,13 +178,21 @@ jobs:
       # to warning once the scripts are clean.
       - name: Run ShellCheck
         run: |
-          mapfile -t files < <(git ls-files '*.sh')
+          set -euo pipefail
+          # Collect via command substitution so set -e reliably aborts on a
+          # failed git ls-files (a failing process substitution can be
+          # silently ignored). The `|| true` inside the loop keeps a
+          # non-matching shebang test from tripping set -e.
+          sh_raw=$(git ls-files '*.sh')
+          all_raw=$(git ls-files)
+          files=()
+          [ -z "$sh_raw" ] || mapfile -t files <<< "$sh_raw"
           # Also pick up extensionless scripts by shebang, wherever they
           # live, so new helper scripts are covered automatically.
           while IFS= read -r f; do
             case "${f##*/}" in *.*) continue ;; esac
-            [ -f "$f" ] && head -1 "$f" | grep -qE '^#!.*\b(sh|bash|dash|ksh|zsh)\b' && files+=("$f")
-          done < <(git ls-files)
+            { [ -f "$f" ] && head -1 "$f" | grep -qE '^#!.*\b(sh|bash|dash|ksh|zsh)\b' && files+=("$f"); } || true
+          done <<< "$all_raw"
           # Zero files would make shellcheck print usage and exit non-zero —
           # a spurious failure, not a finding.
           if [ ${#files[@]} -eq 0 ]; then
@@ -185,6 +205,7 @@ jobs:
   unicode-scan:
     name: Unicode scan (trojan source)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -232,6 +253,7 @@ jobs:
   js-syntax:
     name: JavaScript syntax
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
@@ -264,11 +286,20 @@ jobs:
               if f.endswith('.js'):
                   blocks = [(1, text)]
               else:
-                  for m in re.finditer(r'<script(?![^>]*\bsrc=)[^>]*>(.*?)</script>',
+                  JS_TYPES = ('text/javascript', 'application/javascript', 'module')
+                  for m in re.finditer(r'<script\b([^>]*)>(.*?)</script>',
                                        text, re.DOTALL | re.IGNORECASE):
-                      if m.group(1).strip():
-                          lineno = text[:m.start(1)].count('\n') + 1
-                          blocks.append((lineno, m.group(1)))
+                      attrs = m.group(1)
+                      if re.search(r'\bsrc\s*=', attrs, re.IGNORECASE):
+                          continue
+                      # Skip non-JS blocks (templates, JSON data, etc.).
+                      tm = re.search(r'\btype\s*=\s*["\']?([^"\'\s>]+)',
+                                     attrs, re.IGNORECASE)
+                      if tm and tm.group(1).lower() not in JS_TYPES:
+                          continue
+                      if m.group(2).strip():
+                          lineno = text[:m.start(2)].count('\n') + 1
+                          blocks.append((lineno, m.group(2)))
               for lineno, code in blocks:
                   with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False,
                                                    encoding='utf-8') as tf:
@@ -289,6 +320,7 @@ jobs:
   zizmor:
     name: zizmor (workflow audit)
     runs-on: ubuntu-24.04
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
