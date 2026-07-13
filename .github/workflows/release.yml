@@ -133,8 +133,10 @@ jobs:
     # Accepted gap; the Linux legs pin to ubuntu-24.04 to protect the INDI
     # PPA dependency, but this job's tools are all version-agnostic.
     runs-on: windows-latest
-    # Covers the cold path (wx build ~40 min + vcpkg builds opencv & friends).
-    timeout-minutes: 300
+    # Covers the cold path (wx build ~40 min + vcpkg builds opencv & friends)
+    # with margin, while surfacing a hung fetch/build within a couple hours
+    # instead of occupying a runner for an open-ended window.
+    timeout-minutes: 150
     env:
       WX_VERSION: 3.2.8
       WXWIN: C:\wxWidgets

@@ -69,11 +69,13 @@ jobs:
           # empty input and pass the gate green; pipefail surfaces it in ret.
           set -o pipefail
           ret=0
+          # 2>&1 folds stderr into the gate: clang-tidy-diff can emit
+          # diagnostics/errors on stderr, which must not bypass the grep.
           out=$(git diff -U0 "$base"..HEAD -- 'src/**/*.cpp' 'src/**/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
             | clang-tidy-diff-18.py -p1 -path build -quiet \
-                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters') || ret=$?
+                -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters' 2>&1) || ret=$?
           echo "$out"
           # Match any diagnostic line, not just ones carrying a recognized
           # check name in brackets — with -checks scoped above, every
@@ -232,8 +234,14 @@ jobs:
           failed = False
           checked = 0
           for f in files:
+              # Strict UTF-8 first; legacy help .htm files may be an 8-bit
+              # codepage, so fall back to latin-1 (lossless byte mapping)
+              # rather than errors='replace', which would corrupt multi-byte
+              # sequences inside script blocks and fake syntax errors.
               try:
-                  text = open(f, encoding='utf-8', errors='replace').read()
+                  text = open(f, encoding='utf-8').read()
+              except UnicodeDecodeError:
+                  text = open(f, encoding='latin-1').read()
               except FileNotFoundError:
                   continue
               blocks = []
@@ -278,7 +286,11 @@ jobs:
       # alone would still trust whatever PyPI serves for that version, so
       # pip verifies the exact wheel. Both linux hashes are listed (pip
       # picks the one matching the platform) so moving this job to an arm
-      # runner doesn't break the hash check.
+      # runner doesn't break the hash check. Note --require-hashes covers
+      # the FULL install set: zizmor is a self-contained Rust binary wheel
+      # with no Python dependencies today, but if a future version grows a
+      # transitive dep, pip will refuse to install it until that dep's hash
+      # is added here — a loud, expected failure, not a supply-chain bypass.
       - name: Run zizmor
         run: |
           printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef --hash=sha256:bb7ebbe565a3742eb49a590352127ad549bb122b9b4ff9424ebab7525fa3b6b6' > "$RUNNER_TEMP/zizmor-req.txt"
