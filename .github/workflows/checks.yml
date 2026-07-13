@@ -70,6 +70,16 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
+          # Resolve the diff driver wherever the distro put it: Debian/Ubuntu
+          # have shipped it both as /usr/bin/clang-tidy-diff-18.py and under
+          # /usr/share/clang/. Fail with a clear message if neither exists,
+          # rather than a cryptic command-not-found mid-pipe.
+          CTD=$(command -v clang-tidy-diff-18.py || true)
+          [ -n "$CTD" ] || CTD=/usr/share/clang/clang-tidy-diff-18.py
+          if [ ! -f "$CTD" ]; then
+            echo "::error::clang-tidy-diff-18.py not found in PATH or /usr/share/clang — did the clang-tidy-18 package layout change?"
+            exit 1
+          fi
           # The default Actions shell is `bash -e` WITHOUT pipefail, so a
           # failing `git diff` on the left of the pipe would hand clang-tidy
           # empty input and pass the gate green; pipefail surfaces it in ret.
@@ -80,7 +90,7 @@ jobs:
           out=$(git diff -U0 "$base"..HEAD -- 'src/**/*.cpp' 'src/**/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
             'contributions/MPI_IS_gaussian_process/**/*.h' \
-            | clang-tidy-diff-18.py -p1 -path build -quiet \
+            | python3 "$CTD" -p1 -path build -quiet \
                 -checks='-*,bugprone-*,performance-*,clang-analyzer-*,-bugprone-easily-swappable-parameters' 2>&1) || ret=$?
           echo "$out"
           # Match any diagnostic line, not just ones carrying a recognized
@@ -299,6 +309,16 @@ jobs:
       # is added here — a loud, expected failure, not a supply-chain bypass.
       - name: Run zizmor
         run: |
+          # The cache-poisoning ignore in .github/zizmor.yml is pinned to the
+          # line of the wxWidgets cache step in release.yml. Assert the pin is
+          # still accurate so an edit that shifts lines fails HERE with an
+          # actionable message, instead of the ignore silently un-matching.
+          actual=$(grep -n "actions/cache@" .github/workflows/release.yml | head -1 | cut -d: -f1)
+          pinned=$(grep -oE 'release\.yml:[0-9]+' .github/zizmor.yml | head -1 | cut -d: -f2)
+          if [ "$actual" != "$pinned" ]; then
+            echo "::error::.github/zizmor.yml pins release.yml:$pinned but the cache step is now at line $actual — update the pinned line in .github/zizmor.yml."
+            exit 1
+          fi
           printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef --hash=sha256:bb7ebbe565a3742eb49a590352127ad549bb122b9b4ff9424ebab7525fa3b6b6' > "$RUNNER_TEMP/zizmor-req.txt"
           python3 -m venv "$RUNNER_TEMP/zizmor-venv"
           "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r "$RUNNER_TEMP/zizmor-req.txt"
