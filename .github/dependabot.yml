@@ -1,0 +1,18 @@
+# Dependabot keeps the GitHub Actions we depend on up to date. Because our
+# workflows pin actions by commit SHA (zizmor enforces this), Dependabot PRs
+# bump the SHA and the trailing version comment together.
+#
+# No other package ecosystems apply: C++ dependencies come from apt/Homebrew/
+# vcpkg pinned in-repo (thirdparty.cmake), not from a manifest Dependabot
+# understands.
+version: 2
+updates:
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    groups:
+      # One PR per week covering all action bumps instead of one PR each.
+      actions:
+        patterns: ['*']

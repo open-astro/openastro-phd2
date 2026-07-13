@@ -1,10 +1,16 @@
 name: clang-format Check
 # Run on PRs and on pushes to main only, so in-repo PRs don't double-run
 # (once for the branch push, once for the pull_request event).
+#
+# PRs check only the lines the PR touched (git clang-format against the merge
+# base) so a PR is never failed for pre-existing formatting elsewhere; pushes
+# to main run the full repo-wide check as the backstop.
 on:
   push:
     branches: [main]
   pull_request:
+permissions:
+  contents: read
 jobs:
   formatting-check:
     name: Formatting Check
@@ -12,11 +18,40 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      with:
+        persist-credentials: false
+        # git clang-format needs the merge base commit locally on PRs; the
+        # push-triggered repo-wide check needs only the tip.
+        fetch-depth: ${{ github.event_name == 'pull_request' && '0' || '1' }}
 
     - name: Install clang-format
       run: sudo apt-get update -q && sudo apt-get install -y -q clang-format-18
 
-    - name: Run clang-format style check
+    - name: Check changed lines (pull request)
+      if: github.event_name == 'pull_request'
+      env:
+        BASE_SHA: ${{ github.event.pull_request.base.sha }}
+      run: |
+        base=$(git merge-base "$BASE_SHA" HEAD)
+        # git clang-format exits non-zero when it wants changes, so the exit
+        # code alone can't distinguish "formatting needed" from "tool broke".
+        # Capture it, gate on the diff output, then treat any leftover
+        # non-zero exit (no diff produced) as a tool failure rather than
+        # letting a broken gate pass green.
+        ret=0
+        out=$(git clang-format-18 --diff "$base" HEAD -- src contributions/MPI_IS_gaussian_process) || ret=$?
+        echo "$out"
+        if echo "$out" | grep -q '^diff --git'; then
+          echo "::error::Changed lines are not clang-format clean (see diff above)."
+          exit 1
+        fi
+        if [ "$ret" -ne 0 ]; then
+          echo "::error::git clang-format exited $ret without producing a diff — tool failure, not a clean pass."
+          exit 1
+        fi
+
+    - name: Check whole repo (push to main)
+      if: github.event_name == 'push'
       run: |
         ./build/run-clang-format
         git diff --exit-code

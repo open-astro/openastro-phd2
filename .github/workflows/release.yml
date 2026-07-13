@@ -1,0 +1,352 @@
+name: Release
+
+# Builds all four release installers and attaches them to a DRAFT GitHub
+# Release. This workflow only runs when explicitly kicked off:
+#   - manually from the Actions tab ("Run workflow" button), or
+#   - by pushing a version tag (v1.2.3), which pairs with /release.
+# Nothing is published automatically: the job creates (or updates) a draft
+# release, and a human reviews the artifacts and notes before publishing it
+# from the Releases page.
+#
+# Targets and their packaging scripts:
+#   - Debian amd64  -> build-deb.sh on ubuntu-24.04
+#   - Debian arm64  -> build-deb.sh on ubuntu-24.04-arm (native ARM runner)
+#   - Windows x64   -> build-exe.ps1 on windows-latest (Inno Setup installer)
+#   - macOS arm64   -> build-dmg.sh on macos-26 (self-contained DMG, unsigned)
+#
+# The version comes from version.md (the project's single source of truth);
+# every packaging script reads it itself, and the draft-release job reads it
+# again to name the release/tag.
+on:
+  workflow_dispatch:
+    inputs:
+      macos_runner:
+        description: "macOS runner label (pick macos-15 if macos-26 queues forever)"
+        type: choice
+        default: macos-26
+        options: [macos-26, macos-15]
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: read
+
+# Never cancel a half-finished release build; queue instead.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  # Fail fast before any build minutes are spent: manual runs must start
+  # from main. Without this, a workflow_dispatch from a feature branch would
+  # produce a draft release whose tag - once published - points at a
+  # non-main commit.
+  preflight:
+    name: Ref guard
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+          # Ancestry check below needs history, not just the tip.
+          fetch-depth: 0
+      - name: Require tag-on-main or main
+        run: |
+          if [ "$GITHUB_REF_TYPE" != "tag" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
+            echo "::error::Release runs must start from a v* tag or the main branch (got $GITHUB_REF)."
+            exit 1
+          fi
+          # A v* tag pushed from a feature branch would otherwise sail
+          # through and draft a release for a non-main commit — the same
+          # hazard the branch check above blocks for manual runs. Require
+          # the tagged commit to be reachable from main.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git fetch --quiet origin main
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main. Tag a main commit instead."
+              exit 1
+            fi
+          fi
+          echo "Ref OK: $GITHUB_REF"
+
+  linux-deb:
+    name: Debian package (${{ matrix.arch }})
+    needs: preflight
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: ubuntu-24.04
+            arch: amd64
+          - runner: ubuntu-24.04-arm
+            arch: arm64
+    runs-on: ${{ matrix.runner }}
+    # Generous ceiling over the observed ~30-45 min build; surfaces a hung
+    # run as a failure instead of an open-ended stall.
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # Same dependency set as build.yml plus the Debian packaging tools.
+      # The INDI PPA supplies libindi 2.x for both amd64 and arm64 (Launchpad
+      # builds both); if it were ever missing, debian/rules falls back to
+      # building INDI 2.2.1.1 from source automatically.
+      - name: Install build dependencies
+        run: |
+          sudo add-apt-repository -y ppa:mutlaqja/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential \
+            cmake \
+            pkg-config \
+            debhelper \
+            dpkg-dev \
+            gettext \
+            libwxgtk3.2-dev \
+            wx-common \
+            libcfitsio-dev \
+            libnova-dev \
+            libindi-dev \
+            libopencv-dev \
+            libeigen3-dev \
+            libv4l-dev \
+            libcurl4-gnutls-dev \
+            libgtest-dev \
+            zlib1g-dev \
+            libx11-dev
+
+      - name: Build .deb
+        run: ./build-deb.sh
+
+      # build-deb.sh leaves the packages in the checkout's PARENT directory
+      # (dpkg-buildpackage convention). The transitional phd2-alpaca package
+      # is Architecture: all and identical from both matrix legs, so only the
+      # amd64 leg ships it to avoid a duplicate-artifact collision.
+      - name: Collect package
+        run: |
+          mkdir -p dist
+          mv ../openastro-phd2-*-${{ matrix.arch }}.deb dist/
+          if [ "${{ matrix.arch }}" = "amd64" ]; then
+            if ls ../phd2-alpaca-*-all.deb > /dev/null 2>&1; then
+              mv ../phd2-alpaca-*-all.deb dist/
+            else
+              echo "::warning::No transitional phd2-alpaca package found — releasing without it."
+            fi
+          fi
+          ls -la dist/
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: deb-${{ matrix.arch }}
+          path: dist/*
+          if-no-files-found: error
+
+  windows:
+    name: Windows x64 installer
+    needs: preflight
+    # Floating label: runner images cannot be SHA-pinned (GitHub limitation),
+    # so this job inherits image updates (VS toolchain, Inno Setup version).
+    # Accepted gap; the Linux legs pin to ubuntu-24.04 to protect the INDI
+    # PPA dependency, but this job's tools are all version-agnostic.
+    runs-on: windows-latest
+    # Covers the cold path (wx build ~40 min + vcpkg builds opencv & friends)
+    # with margin, while surfacing a hung fetch/build within a couple hours
+    # instead of occupying a runner for an open-ended window.
+    timeout-minutes: 150
+    env:
+      WX_VERSION: 3.2.8
+      WXWIN: C:\wxWidgets
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      # build-exe.ps1 requires WXWIN pointing at a static x64 wxWidgets build
+      # (lib\vc_x64_lib). Building it cold takes ~20-40 min, so cache the
+      # result keyed on the wx version; later runs restore it in seconds.
+      # Everything else (cfitsio, curl, eigen3, opencv4, libindi) is handled
+      # by the pinned vcpkg that thirdparty.cmake fetches itself.
+      - name: Cache wxWidgets (static x64)
+        id: wx-cache
+        uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830  # v4.3.0
+        with:
+          path: C:\wxWidgets
+          key: wxwidgets-${{ env.WX_VERSION }}-static-x64-v1
+
+      - name: Build wxWidgets (cache miss only)
+        if: steps.wx-cache.outputs.cache-hit != 'true'
+        shell: pwsh
+        run: |
+          $zip = Join-Path $env:RUNNER_TEMP "wx.zip"
+          Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v$env:WX_VERSION/wxWidgets-$env:WX_VERSION.zip" -OutFile $zip
+          # Pin the archive content, not just the URL: a tampered upload or
+          # CDN compromise fails loudly instead of being cached into every
+          # future release build. Hash computed from the official v3.2.8
+          # release asset (wxWidgets publishes no checksum file, so this is
+          # trust-on-first-use). When bumping WX_VERSION, recompute with:
+          #   curl -sLO https://github.com/wxWidgets/wxWidgets/releases/download/v<VER>/wxWidgets-<VER>.zip
+          #   sha256sum wxWidgets-<VER>.zip
+          # and sanity-check the zip opens and has include/ + build/msw at
+          # its root before updating $expectedHash below.
+          $expectedHash = "0f781c17f4a50f42b1533d6e149d6e87bb47dc51c3992144918a9c231d5615a2"
+          $actualHash = (Get-FileHash -Algorithm SHA256 $zip).Hash.ToLowerInvariant()
+          if ($actualHash -ne $expectedHash) {
+            throw "wxWidgets download hash mismatch: expected $expectedHash, got $actualHash"
+          }
+          # The Windows release zip is rootless: include/, src/, build/ sit at
+          # the archive root, so extracting into WXWIN gives the layout
+          # build-exe.ps1 expects.
+          Expand-Archive $zip -DestinationPath $env:WXWIN
+          $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          $vs = & $vswhere -latest -products * -requires Microsoft.VisualStudio.Component.VC.Tools.x86.x64 -property installationPath
+          if (-not $vs) { throw "No Visual Studio with C++ toolchain found" }
+          # Static wx libs (SHARED=0 default), dynamic CRT (/MD) to match the
+          # vcpkg x64-windows triplet the rest of the build links against.
+          cmd /c "`"$vs\VC\Auxiliary\Build\vcvars64.bat`" && cd /d $env:WXWIN\build\msw && nmake /f makefile.vc BUILD=release TARGET_CPU=X64"
+          if ($LASTEXITCODE -ne 0) { throw "wxWidgets build failed" }
+
+      # Inno Setup 6 is preinstalled on GitHub's Windows images at the
+      # default location build-exe.ps1 searches.
+      - name: Build installer
+        shell: pwsh
+        run: ./build-exe.ps1
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: windows-x64
+          path: tmp/openastro-phd2-*-x64.exe
+          if-no-files-found: error
+
+  macos:
+    name: macOS DMG (Apple Silicon)
+    needs: preflight
+    # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if that
+    # label is unavailable the job queues until timeout-minutes fires. The
+    # fallback is self-service: re-run via workflow_dispatch and pick
+    # macos-15 from the runner dropdown — no code edit needed, because
+    # ALLOW_OLD_MACOS already opts in to the script's documented
+    # older-macOS CI override (a no-op when the runner really is macOS 26).
+    # Tag-triggered runs have no inputs; they fall back to the MACOS_RUNNER
+    # repository variable (Settings -> Secrets and variables -> Actions ->
+    # Variables) if set, else macos-26 — so even tag releases can be
+    # redirected to another runner without a code edit.
+    runs-on: ${{ inputs.macos_runner || vars.MACOS_RUNNER || 'macos-26' }}
+    # If the runner label is unknown, the job never gets a runner: GitHub
+    # fails it after this queue timeout instead of blocking the release
+    # forever (timeout-minutes also caps queue wait for unschedulable jobs).
+    timeout-minutes: 90
+    env:
+      # Only set the script's older-macOS override when actually running on
+      # a fallback runner. build-dmg.sh's macOS-26 version guard stays live
+      # on the default runner, so a regressed macos-26 image fails loudly
+      # instead of being silently waved through. (Empty string reads as
+      # unset via the script's ${ALLOW_OLD_MACOS:-} check.)
+      ALLOW_OLD_MACOS: ${{ (inputs.macos_runner || vars.MACOS_RUNNER || 'macos-26') != 'macos-26' && '1' || '' }}
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - name: Install build dependencies
+        run: brew install cmake wxwidgets cfitsio libnova gettext
+
+      # Produces a self-contained (Homebrew dylibs bundled) but UNSIGNED DMG:
+      # users see a Gatekeeper warning until codesign + notarytool steps are
+      # added with an Apple Developer ID certificate in repo secrets.
+      - name: Build DMG
+        run: ./build-dmg.sh
+
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4.6.2
+        with:
+          name: macos-arm64
+          path: tmp/openastro-phd2-*-arm64.dmg
+          if-no-files-found: error
+
+  draft-release:
+    name: Draft GitHub release
+    needs: [linux-deb, windows, macos]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 1
+          persist-credentials: false
+
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093  # v4.3.0
+        with:
+          path: dist
+          merge-multiple: true
+
+      # Tag-triggered runs use the pushed tag; manual runs derive v<version>
+      # from version.md. Either way the release is created as a DRAFT — review
+      # the artifacts and notes on the Releases page, then publish by hand.
+      # Note on tagging: `gh release create --draft` does NOT create the git
+      # tag — GitHub materializes the tag (at --target) only when the draft
+      # is published, so an abandoned/deleted draft leaves no tag behind.
+      - name: Create or update draft release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          # The default Actions shell is `bash -e` WITHOUT pipefail; enable it
+          # so a failure on the left of any pipe (gh, grep) aborts the step.
+          set -euo pipefail
+          VERSION=$(grep -E '^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9._-]*)[[:space:]]*$' version.md | head -1 | tr -d '[:space:]')
+          if [ -z "$VERSION" ]; then
+            echo "Could not read version from version.md" >&2
+            exit 1
+          fi
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            TAG="$GITHUB_REF_NAME"
+            # The tag names the release but every installer stamped its
+            # version from version.md — if they disagree, the draft would
+            # carry mismatched tag/title/artifacts. Catch it here.
+            if [ "$TAG" != "v$VERSION" ]; then
+              echo "::error::Tag $TAG does not match version.md ($VERSION). Bump version.md (use /release) before tagging."
+              exit 1
+            fi
+          else
+            TAG="v$VERSION"
+          fi
+          echo "Version: $VERSION  Tag: $TAG"
+          ls -la dist/
+          # Single atomic view call: checking existence and draft status in
+          # two separate calls would race a human publishing the draft
+          # between them (TOCTOU).
+          if isDraft=$(gh release view "$TAG" --json isDraft --jq .isDraft 2>/dev/null); then
+            # Only replace assets on a DRAFT. A published release is live for
+            # users; silently swapping its binaries would be a supply-chain
+            # hazard. Bump the version (new tag) instead.
+            if [ "$isDraft" != "true" ]; then
+              echo "::error::Release $TAG is already published; refusing to replace its assets. Cut a new version instead."
+              exit 1
+            fi
+            echo "Draft release $TAG exists; replacing artifacts"
+            # --clobber only overwrites same-named assets; delete everything
+            # first so a re-run can't leave stale artifacts from a previous
+            # attempt mixed in with fresh ones. Process substitution (not a
+            # pipe) keeps the loop in the parent shell, so with set -e a
+            # failed deletion aborts the step instead of being swallowed by
+            # a subshell.
+            while IFS= read -r asset; do
+              echo "Deleting stale asset: $asset"
+              gh release delete-asset "$TAG" "$asset" --yes
+            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
+            gh release upload "$TAG" dist/*
+          else
+            gh release create "$TAG" \
+              --draft \
+              --target "$GITHUB_SHA" \
+              --title "OpenAstro PHD2 $VERSION" \
+              --generate-notes \
+              dist/*
+          fi
+          echo "Draft release ready: review and publish it from the Releases page."

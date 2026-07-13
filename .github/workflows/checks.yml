@@ -1,0 +1,365 @@
+name: Checks
+
+# Fast, no-compile checks that gate pull requests (plus a backstop run on
+# pushes to main). Everything here finishes in seconds to a few minutes;
+# the expensive full compile lives in build.yml (post-merge) and the
+# sanitizer builds in sanitizers.yml.
+#
+# clang-format lives in its own workflow (clang-format-check.yml).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: checks-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  clang-tidy:
+    name: clang-tidy (changed lines)
+    # Only meaningful for PRs: on main pushes there is no diff to scope to.
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    # The analyzer can take several minutes on Eigen-heavy TUs; a stall must
+    # not hold the PR gate for GitHub's 6-hour default.
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      # clang-tidy needs a compile database, which needs the same dev packages
+      # the real build uses — but only a CMake *configure*, not a compile.
+      - name: Install dependencies
+        run: |
+          sudo add-apt-repository -y ppa:mutlaqja/ppa
+          sudo apt-get update -q
+          sudo apt-get install -y -q --no-install-recommends \
+            build-essential cmake pkg-config gettext clang-tidy-18 \
+            libwxgtk3.2-dev wx-common libcfitsio-dev libnova-dev libindi-dev \
+            libopencv-dev libeigen3-dev libv4l-dev libcurl4-gnutls-dev \
+            libgtest-dev zlib1g-dev libx11-dev
+
+      - name: Generate compile database
+        run: |
+          cmake -S . -B build \
+            -Wno-dev \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_EXPORT_COMPILE_COMMANDS=ON \
+            -DUSE_SYSTEM_LIBINDI=1 \
+            -DUSE_SYSTEM_GTEST=1 \
+            -DOPENSOURCE_ONLY=1
+
+      # Scope to the lines this PR changed so pre-existing findings elsewhere
+      # never fail the PR. Check set: bugprone + performance lints only —
+      # cheap enough to stay well inside the job timeout even on a PR that
+      # touches many TUs. Deep path-sensitive analysis (the Clang Static
+      # Analyzer's territory) is deliberately NOT here: it costs on the
+      # order of a minute per touched TU (worse on the Eigen-heavy
+      # gaussian-process TUs), which risks systematic timeout failures on
+      # large PRs; CodeQL (codeql.yml) covers that depth post-merge and
+      # weekly instead.
+      # clang-tidy-diff-18.py has no -warnings-as-errors flag (unrecognized in
+      # LLVM 18), so gate on the output: any diagnostic from the enabled check
+      # families within the changed lines fails the job.
+      - name: Run clang-tidy on changed lines
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          # Resolve the diff driver wherever the distro put it: Debian/Ubuntu
+          # have shipped it both as /usr/bin/clang-tidy-diff-18.py and under
+          # /usr/share/clang/. Fail with a clear message if neither exists,
+          # rather than a cryptic command-not-found mid-pipe.
+          CTD=$(command -v clang-tidy-diff-18.py || true)
+          [ -n "$CTD" ] || CTD=/usr/share/clang/clang-tidy-diff-18.py
+          if [ ! -f "$CTD" ]; then
+            echo "::error::clang-tidy-diff-18.py not found in PATH or /usr/share/clang — did the clang-tidy-18 package layout change?"
+            exit 1
+          fi
+          # The default Actions shell is `bash -e` WITHOUT pipefail, so a
+          # failing `git diff` on the left of the pipe would hand clang-tidy
+          # empty input and pass the gate green; pipefail surfaces it in ret.
+          set -o pipefail
+          ret=0
+          # 2>&1 folds stderr into the gate: clang-tidy-diff can emit
+          # diagnostics/errors on stderr, which must not bypass the grep.
+          out=$(git diff -U0 "$base"..HEAD -- 'src/**/*.cpp' 'src/**/*.h' \
+            'contributions/MPI_IS_gaussian_process/**/*.cpp' \
+            'contributions/MPI_IS_gaussian_process/**/*.h' \
+            | python3 "$CTD" -p1 -path build -quiet \
+                -checks='-*,bugprone-*,performance-*,-bugprone-easily-swappable-parameters' 2>&1) || ret=$?
+          echo "$out"
+          # Match diagnostic lines by their file:line:col anchor rather than
+          # any bare "warning:/error:" substring, so stray tool chatter or
+          # system-header warnings leaking into the merged output can't fail
+          # the gate; with -checks scoped above, every anchored diagnostic
+          # is one of ours. The nonzero-exit backstop below still catches
+          # tool failures that produce no anchored diagnostics.
+          if echo "$out" | grep -qE '^[^ :]+:[0-9]+:[0-9]+: (warning|error): '; then
+            echo "::error::clang-tidy found issues on the changed lines (see above)."
+            exit 1
+          fi
+          # A nonzero exit with no recognized diagnostic means the tool
+          # itself failed (crash, bad invocation) — fail rather than let a
+          # broken gate pass green.
+          if [ "$ret" -ne 0 ]; then
+            echo "::error::clang-tidy-diff exited $ret without reporting diagnostics — tool failure, not a clean pass."
+            exit 1
+          fi
+
+  cppcheck:
+    name: cppcheck (changed files)
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install cppcheck
+        run: sudo apt-get update -q && sudo apt-get install -y -q cppcheck
+
+      # Only the C++ files the PR touched. `--error-exitcode=1` fails on
+      # error-severity findings; warnings are printed but advisory.
+      # Known limitation: runs without -I include paths or a compile
+      # database, so project-macro-dependent code can yield false
+      # positives/negatives (the missingIncludeSystem/unknownMacro
+      # suppressions absorb the noise). The compile-database-backed deep
+      # pass is the clang-tidy job above; cppcheck is a cheap second
+      # opinion, not the primary gate.
+      - name: Run cppcheck on changed files
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          set -euo pipefail
+          base=$(git merge-base "$BASE_SHA" HEAD)
+          # Collect via command substitution, not mapfile-from-process-
+          # substitution: set -e reliably aborts on a failed git diff this
+          # way, whereas a failing process substitution can be silently
+          # ignored (bash-version-dependent).
+          files_raw=$(git diff --name-only --diff-filter=ACMR "$base"..HEAD \
+            -- 'src/**/*.cpp' 'src/**/*.h' 'contributions/MPI_IS_gaussian_process/**/*.cpp' \
+               'contributions/MPI_IS_gaussian_process/**/*.h')
+          if [ -z "$files_raw" ]; then
+            echo "No C++ files changed; skipping."
+            exit 0
+          fi
+          mapfile -t files <<< "$files_raw"
+          printf 'Checking: %s\n' "${files[@]}"
+          cppcheck \
+            -I src \
+            --enable=warning,performance,portability \
+            --inline-suppr \
+            --suppress=missingIncludeSystem \
+            --suppress=unknownMacro \
+            --error-exitcode=1 \
+            --std=c++20 \
+            "${files[@]}"
+
+  shellcheck:
+    name: ShellCheck
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      # shellcheck is preinstalled on GitHub Ubuntu images. Covers tracked
+      # *.sh plus the extensionless shell helpers under build/. Gate on
+      # error severity so long-standing style warnings don't block; tighten
+      # to warning once the scripts are clean.
+      - name: Run ShellCheck
+        run: |
+          set -euo pipefail
+          # Collect via command substitution so set -e reliably aborts on a
+          # failed git ls-files (a failing process substitution can be
+          # silently ignored). The `|| true` inside the loop keeps a
+          # non-matching shebang test from tripping set -e.
+          sh_raw=$(git ls-files '*.sh')
+          all_raw=$(git ls-files)
+          files=()
+          [ -z "$sh_raw" ] || mapfile -t files <<< "$sh_raw"
+          # Also pick up extensionless scripts by shebang, wherever they
+          # live, so new helper scripts are covered automatically.
+          while IFS= read -r f; do
+            case "${f##*/}" in *.*) continue ;; esac
+            { [ -f "$f" ] && head -1 "$f" | grep -qE '^#!.*\b(sh|bash|dash|ksh|zsh)\b' && files+=("$f"); } || true
+          done <<< "$all_raw"
+          # Zero files would make shellcheck print usage and exit non-zero —
+          # a spurious failure, not a finding.
+          if [ ${#files[@]} -eq 0 ]; then
+            echo "No shell scripts tracked; skipping."
+            exit 0
+          fi
+          printf 'Checking: %s\n' "${files[@]}"
+          shellcheck --severity=error "${files[@]}"
+
+  unicode-scan:
+    name: Unicode scan (trojan source)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      # Reject invisible / bidirectional-override code points that can make
+      # displayed source differ from what the compiler sees (CVE-2021-42574
+      # "trojan source"). locale/ is excluded: translation files legitimately
+      # contain RTL marks for Arabic and similar locales.
+      - name: Scan for dangerous invisible characters
+        run: |
+          python3 - <<'EOF'
+          import subprocess, sys
+          DANGEROUS = {
+              0x202A, 0x202B, 0x202C, 0x202D, 0x202E,     # bidi embedding/override
+              0x2066, 0x2067, 0x2068, 0x2069,             # bidi isolates
+              0x200B, 0x200C, 0x200D, 0x200E, 0x200F,     # zero-width + marks
+              0x00AD, 0x2060, 0xFEFF,                     # soft hyphen, WJ, ZWNBSP
+          }
+          SKIP_EXT = ('.png', '.ico', '.icns', '.jpg', '.gif', '.zip', '.mo',
+                      '.pdf', '.fit', '.fits', '.exe', '.dll')
+          files = subprocess.run(['git', 'ls-files'], capture_output=True,
+                                 text=True, check=True).stdout.splitlines()
+          bad = []
+          for f in files:
+              if f.startswith('locale/') or f.lower().endswith(SKIP_EXT):
+                  continue
+              try:
+                  # utf-8-sig strips a legitimate leading BOM (e.g. the one in
+                  # .clang-format) while still flagging U+FEFF anywhere else.
+                  with open(f, encoding='utf-8-sig') as fh:
+                      text = fh.read()
+              except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
+                  continue  # binary or symlink; not a text-source concern
+              for lineno, line in enumerate(text.splitlines(), 1):
+                  for ch in line:
+                      if ord(ch) in DANGEROUS:
+                          bad.append(f"{f}:{lineno}: U+{ord(ch):04X}")
+          if bad:
+              print("Dangerous invisible/bidi characters found:")
+              print("\n".join(bad))
+              sys.exit(1)
+          print(f"Scanned {len(files)} tracked files: clean.")
+          EOF
+
+  js-syntax:
+    name: JavaScript syntax
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      # The project has no standalone .js files; its JavaScript lives inline
+      # in <script> blocks (web UI in scripts/webui/index.html). Extract each
+      # block and run it through node --check. Standalone .js files, if ever
+      # added, are checked directly.
+      - name: Syntax-check JavaScript
+        run: |
+          python3 - <<'EOF'
+          import re, subprocess, sys, tempfile, os
+          files = subprocess.run(['git', 'ls-files', '*.js', '*.html', '*.htm'],
+                                 capture_output=True, text=True, check=True).stdout.splitlines()
+          failed = False
+          checked = 0
+          for f in files:
+              # Strict UTF-8 first; legacy help .htm files may be an 8-bit
+              # codepage, so fall back to latin-1 (lossless byte mapping)
+              # rather than errors='replace', which would corrupt multi-byte
+              # sequences inside script blocks and fake syntax errors.
+              try:
+                  with open(f, encoding='utf-8') as fh:
+                      text = fh.read()
+              except UnicodeDecodeError:
+                  with open(f, encoding='latin-1') as fh:
+                      text = fh.read()
+              except FileNotFoundError:
+                  continue
+              blocks = []
+              if f.endswith('.js'):
+                  blocks = [(1, text)]
+              else:
+                  JS_TYPES = ('text/javascript', 'application/javascript', 'module')
+                  for m in re.finditer(r'<script\b([^>]*)>(.*?)</script>',
+                                       text, re.DOTALL | re.IGNORECASE):
+                      attrs = m.group(1)
+                      if re.search(r'\bsrc\s*=', attrs, re.IGNORECASE):
+                          continue
+                      # Skip non-JS blocks (templates, JSON data, etc.).
+                      tm = re.search(r'\btype\s*=\s*["\']?([^"\'\s>]+)',
+                                     attrs, re.IGNORECASE)
+                      if tm and tm.group(1).lower() not in JS_TYPES:
+                          continue
+                      if m.group(2).strip():
+                          lineno = text[:m.start(2)].count('\n') + 1
+                          blocks.append((lineno, m.group(2)))
+              for lineno, code in blocks:
+                  with tempfile.NamedTemporaryFile('w', suffix='.js', delete=False,
+                                                   encoding='utf-8') as tf:
+                      tf.write(code)
+                      path = tf.name
+                  r = subprocess.run(['node', '--check', path],
+                                     capture_output=True, text=True)
+                  os.unlink(path)
+                  checked += 1
+                  if r.returncode != 0:
+                      print(f"{f}:{lineno}: JavaScript syntax error")
+                      print(r.stderr)
+                      failed = True
+          print(f"Checked {checked} script block(s).")
+          sys.exit(1 if failed else 0)
+          EOF
+
+  zizmor:
+    name: zizmor (workflow audit)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      # Static security audit of the GitHub Actions workflows themselves
+      # (unpinned actions, credential persistence, template injection, ...).
+      # --offline skips audits that need the GitHub API, so no token is used.
+      # Per-finding ignores live in .github/zizmor.yml. Hash-pinned for the
+      # same reason the workflows SHA-pin their actions: version pinning
+      # alone would still trust whatever PyPI serves for that version, so
+      # pip verifies the exact wheel. Both linux hashes are listed (pip
+      # picks the one matching the platform) so moving this job to an arm
+      # runner doesn't break the hash check. Note --require-hashes covers
+      # the FULL install set: zizmor is a self-contained Rust binary wheel
+      # with no Python dependencies today, but if a future version grows a
+      # transitive dep, pip will refuse to install it until that dep's hash
+      # is added here — a loud, expected failure, not a supply-chain bypass.
+      - name: Run zizmor
+        run: |
+          # The cache-poisoning ignore in .github/zizmor.yml is pinned to the
+          # line of the wxWidgets cache step in release.yml. Assert the pin is
+          # still accurate so an edit that shifts lines fails HERE with an
+          # actionable message, instead of the ignore silently un-matching.
+          # Anchor on the wxWidgets cache step's name, not just the first
+          # actions/cache in the file, so a future cache step added earlier
+          # (e.g. ccache) can't make the pin look valid against the wrong
+          # line.
+          actual=$(awk '/Cache wxWidgets/{f=1} f && /actions\/cache@/{print NR; exit}' .github/workflows/release.yml)
+          pinned=$(grep -oE 'release\.yml:[0-9]+' .github/zizmor.yml | head -1 | cut -d: -f2)
+          if [ "$actual" != "$pinned" ]; then
+            echo "::error::.github/zizmor.yml pins release.yml:$pinned but the cache step is now at line $actual — update the pinned line in .github/zizmor.yml."
+            exit 1
+          fi
+          printf '%s\n' 'zizmor==1.26.1 --hash=sha256:6a958d8a0941d7e1d0de8436670b5cb7fc64c8028b4d16e3f519ccc77f953cef --hash=sha256:bb7ebbe565a3742eb49a590352127ad549bb122b9b4ff9424ebab7525fa3b6b6' > "$RUNNER_TEMP/zizmor-req.txt"
+          python3 -m venv "$RUNNER_TEMP/zizmor-venv"
+          "$RUNNER_TEMP/zizmor-venv/bin/pip" install --quiet --require-hashes --only-binary :all: -r "$RUNNER_TEMP/zizmor-req.txt"
+          "$RUNNER_TEMP/zizmor-venv/bin/zizmor" --offline .github/workflows/

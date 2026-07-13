@@ -1,0 +1,16 @@
+# zizmor (workflow security audit) configuration.
+# Docs: https://docs.zizmor.sh/configuration/
+rules:
+  cache-poisoning:
+    ignore:
+      # Scoped to the wxWidgets cache step in the Windows release job (line
+      # of its `uses: actions/cache` — zizmor's finest ignore granularity).
+      # The cache is keyed on the pinned wx version and only holds a static
+      # library built from a hash-verified upstream zip; artifacts are
+      # reviewed in a draft release before anything goes public. If the step
+      # moves, this ignore stops matching and zizmor fails CLOSED (the
+      # finding reappears), which is the safe direction — re-pin the line
+      # rather than widening the scope.
+      # TODO when editing release.yml above the Windows job: re-verify this
+      # line number against `grep -n "actions/cache@" release.yml`.
+      - release.yml:176
