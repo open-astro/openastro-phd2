@@ -19,6 +19,12 @@ name: Release
 # again to name the release/tag.
 on:
   workflow_dispatch:
+    inputs:
+      macos_runner:
+        description: "macOS runner label (pick macos-15 if macos-26 queues forever)"
+        type: choice
+        default: macos-26
+        options: [macos-26, macos-15]
   push:
     tags: ['v*']
 
@@ -193,13 +199,14 @@ jobs:
   macos:
     name: macOS DMG (Apple Silicon)
     needs: preflight
-    # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if this
-    # image label is ever unavailable, the job queues forever ("waiting for
-    # a runner") — swap the two runs-on lines below and nothing else,
-    # because ALLOW_OLD_MACOS already opts in to the script's documented
+    # Apple Silicon runner. build-dmg.sh targets macOS 26 Tahoe; if that
+    # label is unavailable the job queues until timeout-minutes fires. The
+    # fallback is self-service: re-run via workflow_dispatch and pick
+    # macos-15 from the runner dropdown — no code edit needed, because
+    # ALLOW_OLD_MACOS already opts in to the script's documented
     # older-macOS CI override (a no-op when the runner really is macOS 26).
-    runs-on: macos-26
-    # runs-on: macos-15  # <- fallback if the macos-26 label is unavailable
+    # Tag-triggered runs have no inputs and default to macos-26.
+    runs-on: ${{ inputs.macos_runner || 'macos-26' }}
     # If the runner label is unknown, the job never gets a runner: GitHub
     # fails it after this queue timeout instead of blocking the release
     # forever (timeout-minutes also caps queue wait for unschedulable jobs).
@@ -255,6 +262,9 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          # The default Actions shell is `bash -e` WITHOUT pipefail; enable it
+          # so a failure on the left of any pipe (gh, grep) aborts the step.
+          set -euo pipefail
           VERSION=$(grep -E '^[[:space:]]*[0-9]+\.[0-9]+\.[0-9]+([A-Za-z0-9._-]*)[[:space:]]*$' version.md | head -1 | tr -d '[:space:]')
           if [ -z "$VERSION" ]; then
             echo "Could not read version from version.md" >&2
@@ -286,11 +296,14 @@ jobs:
             echo "Draft release $TAG exists; replacing artifacts"
             # --clobber only overwrites same-named assets; delete everything
             # first so a re-run can't leave stale artifacts from a previous
-            # attempt mixed in with fresh ones.
-            gh release view "$TAG" --json assets --jq '.assets[].name' | while IFS= read -r asset; do
+            # attempt mixed in with fresh ones. Process substitution (not a
+            # pipe) keeps the loop in the parent shell, so with set -e a
+            # failed deletion aborts the step instead of being swallowed by
+            # a subshell.
+            while IFS= read -r asset; do
               echo "Deleting stale asset: $asset"
               gh release delete-asset "$TAG" "$asset" --yes
-            done
+            done < <(gh release view "$TAG" --json assets --jq '.assets[].name')
             gh release upload "$TAG" dist/*
           else
             gh release create "$TAG" \

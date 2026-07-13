@@ -64,6 +64,10 @@ jobs:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           base=$(git merge-base "$BASE_SHA" HEAD)
+          # The default Actions shell is `bash -e` WITHOUT pipefail, so a
+          # failing `git diff` on the left of the pipe would hand clang-tidy
+          # empty input and pass the gate green; pipefail surfaces it in ret.
+          set -o pipefail
           ret=0
           out=$(git diff -U0 "$base"..HEAD -- 'src/**/*.cpp' 'src/**/*.h' \
             'contributions/MPI_IS_gaussian_process/**/*.cpp' \
