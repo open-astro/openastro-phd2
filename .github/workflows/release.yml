@@ -46,11 +46,27 @@ jobs:
     runs-on: ubuntu-24.04
     timeout-minutes: 5
     steps:
-      - name: Require tag or main
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+          # Ancestry check below needs history, not just the tip.
+          fetch-depth: 0
+      - name: Require tag-on-main or main
         run: |
           if [ "$GITHUB_REF_TYPE" != "tag" ] && [ "$GITHUB_REF" != "refs/heads/main" ]; then
             echo "::error::Release runs must start from a v* tag or the main branch (got $GITHUB_REF)."
             exit 1
+          fi
+          # A v* tag pushed from a feature branch would otherwise sail
+          # through and draft a release for a non-main commit — the same
+          # hazard the branch check above blocks for manual runs. Require
+          # the tagged commit to be reachable from main.
+          if [ "$GITHUB_REF_TYPE" = "tag" ]; then
+            git fetch --quiet origin main
+            if ! git merge-base --is-ancestor HEAD origin/main; then
+              echo "::error::Tag $GITHUB_REF_NAME points to a commit that is not on main. Tag a main commit instead."
+              exit 1
+            fi
           fi
           echo "Ref OK: $GITHUB_REF"
 

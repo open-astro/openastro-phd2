@@ -13,4 +13,4 @@ rules:
       # rather than widening the scope.
       # TODO when editing release.yml above the Windows job: re-verify this
       # line number against `grep -n "actions/cache@" release.yml`.
-      - release.yml:160
+      - release.yml:176

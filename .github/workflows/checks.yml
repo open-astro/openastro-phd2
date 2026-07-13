@@ -236,7 +236,8 @@ jobs:
               try:
                   # utf-8-sig strips a legitimate leading BOM (e.g. the one in
                   # .clang-format) while still flagging U+FEFF anywhere else.
-                  text = open(f, encoding='utf-8-sig').read()
+                  with open(f, encoding='utf-8-sig') as fh:
+                      text = fh.read()
               except (UnicodeDecodeError, IsADirectoryError, FileNotFoundError):
                   continue  # binary or symlink; not a text-source concern
               for lineno, line in enumerate(text.splitlines(), 1):
@@ -277,9 +278,11 @@ jobs:
               # rather than errors='replace', which would corrupt multi-byte
               # sequences inside script blocks and fake syntax errors.
               try:
-                  text = open(f, encoding='utf-8').read()
+                  with open(f, encoding='utf-8') as fh:
+                      text = fh.read()
               except UnicodeDecodeError:
-                  text = open(f, encoding='latin-1').read()
+                  with open(f, encoding='latin-1') as fh:
+                      text = fh.read()
               except FileNotFoundError:
                   continue
               blocks = []
