@@ -225,7 +225,12 @@ jobs:
     # forever (timeout-minutes also caps queue wait for unschedulable jobs).
     timeout-minutes: 90
     env:
-      ALLOW_OLD_MACOS: 1
+      # Only set the script's older-macOS override when actually running on
+      # a fallback runner. build-dmg.sh's macOS-26 version guard stays live
+      # on the default runner, so a regressed macos-26 image fails loudly
+      # instead of being silently waved through. (Empty string reads as
+      # unset via the script's ${ALLOW_OLD_MACOS:-} check.)
+      ALLOW_OLD_MACOS: ${{ (inputs.macos_runner || vars.MACOS_RUNNER || 'macos-26') != 'macos-26' && '1' || '' }}
     steps:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:

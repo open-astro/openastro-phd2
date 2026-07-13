@@ -11,4 +11,6 @@ rules:
       # moves, this ignore stops matching and zizmor fails CLOSED (the
       # finding reappears), which is the safe direction — re-pin the line
       # rather than widening the scope.
+      # TODO when editing release.yml above the Windows job: re-verify this
+      # line number against `grep -n "actions/cache@" release.yml`.
       - release.yml:160

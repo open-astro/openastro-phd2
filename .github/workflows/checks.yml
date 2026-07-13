@@ -56,6 +56,12 @@ jobs:
       # never fail the PR. Check set: bugprone + performance, plus the Clang
       # Static Analyzer (clang-analyzer-*) for path-sensitive analysis —
       # deeper than the lint checks, still bounded by the diff size.
+      # Runtime ceiling: the analyzer is the heavy part — expect roughly a
+      # minute per touched translation unit, several minutes for a PR that
+      # touches the Eigen-heavy gaussian-process TUs. Acceptable for a PR
+      # gate; if it ever creeps past ~10 min routinely, demote
+      # clang-analyzer-* to the post-merge tier and keep the cheap lints
+      # here.
       # clang-tidy-diff-18.py has no -warnings-as-errors flag (unrecognized in
       # LLVM 18), so gate on the output: any diagnostic from the enabled check
       # families within the changed lines fails the job.
