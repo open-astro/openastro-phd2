@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.1.0] - 2026-07-15
+
 ### Added
 - ASCOM camera support on Windows. Ports upstream `cam_ascom.{cpp,h}` and wires the ASCOM Chooser's registered Camera devices into the New Profile Wizard's camera dropdown, mirroring how the existing mount/rotator paths surface ASCOM drivers. The driver itself lives outside PHD2 — the user installs whatever ASCOM camera driver their hardware vendor ships, and PHD2 talks to it via late-bound COM (no vendor SDK is bundled). Gated by `ASCOM_CAMERA` in `cameras.h`, only enabled when `__WINDOWS__` is defined; the source files compile out on macOS/Linux.
 
@@ -35,6 +37,29 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - New manual-trigger `release.yml` workflow that builds all four release installers on GitHub-hosted runners — Debian amd64, Debian arm64 (native ARM runner), Windows x64 (Inno Setup, with the static wxWidgets build cached), and macOS Apple Silicon DMG — and attaches them to a draft GitHub Release. Kicked off by hand from the Actions tab or by pushing a `v*` tag; nothing is published until the draft is reviewed and published manually.
 - The Linux build + `ctest` workflow no longer runs on pull requests — the full compile slowed PR iteration. PRs get the fast checks (clang-format, Claude review); the compile runs as a post-merge safety net on pushes to `main` and can be run on any branch via `workflow_dispatch`.
 - Added a Linux build + `ctest` GitHub Actions workflow (previously nothing compiled or tested on PRs). Pinned `actions/checkout` by SHA and de-duplicated the clang-format trigger. Honored the vcpkg commit pin on Windows (`run_exe.bat` was building vcpkg HEAD), added a verified `URL_HASH` for the googletest download, fixed the `run_exe.bat` delayed-expansion bug, made the macOS DMG Finder-layout step non-fatal with staging cleanup, hardened `build-dmg.sh` dylib bundling, stopped `debian/rules` from shipping host INDI libs, required wxWidgets 3.2 in `debian/control`, taught `build-exe.ps1` to find Inno Setup 6 and validate `WXWIN`, and refreshed stale repo URLs/branding.
+
+### Commit References
+- `2091c7b3` - fix: avoid uninitialized LDLT read flagged by UBSan in GP::clearData
+- `035e02ce` - Bump the actions group with 5 updates (#18)
+- `95b92139` - ci: fast PR checks, sanitizer runs, dependabot, and manual CD for all release targets (#17)
+- `56cf69aa` - Merge pull request #16 from open-astro/fix/audit-findings
+- `c4093caa` - review: deterministic url_decode UTF-8 fallback; bound delay settings
+- `ed2f72ca` - review: RAII dialog re-enable and per-instance reentrancy flags
+- `32b485d3` - review: null-check guide algorithm in get/set_algo_param RPCs
+- `d2774ab6` - review: address Claude review round-3 findings on PR #16
+- `ae869134` - review: address Claude review round-2 findings on PR #16
+- `9ce3fe3d` - review: address Claude review feedback on PR #16
+- `d11dfc06` - ci: cap build parallelism (OOM) and revert claude-review.yml to main
+- `abb95e3c` - ci: fix formatting, restore id-token for review, use INDI PPA
+- `5620ee8a` - build(win): call vcpkg bootstrap/install by absolute path
+- `65818f42` - Fix audit findings across source, build, packaging, CI, and docs
+- `6591b4af` - Merge pull request #15 from open-astro/ci/add-claude-review
+- `9eb34ffc` - ci: add Claude Code automated PR review workflow
+- `a9d2e7f6` - docs: add headless-port playbook + tracking files (Phase 0) (#1)
+- `708fe87d` - Merge pull request #13 from open-astro/add/ascom-camera-win
+- `6dde3611` - Address CodeRabbit round 2 on PR #13
+- `4c8bf7ca` - Address CodeRabbit review on PR #13
+- `7d939d35` - Add Windows ASCOM camera support, make run_exe.bat always wipe tmp
 
 ## [2.0.0] - 2026-05-15
 
