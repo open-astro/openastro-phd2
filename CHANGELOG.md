@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Windows installer refused to run on ARM64 Windows 11 ("This program does not support the version of Windows your computer is running"). Inno Setup 6.3+ redefined `x64` to mean x64-OS-only; the installer now uses `x64compatible`, which admits native x64 and ARM64 Windows running x64 apps under emulation.
+
 ## [2.1.0] - 2026-07-15
 
 ### Added

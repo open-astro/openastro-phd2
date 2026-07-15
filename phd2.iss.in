@@ -15,8 +15,12 @@ AppPublisher=OpenAstro
 ; living under the x86 tree. ArchitecturesAllowed blocks the installer from
 ; running on 32-bit Windows at all; ArchitecturesInstallIn64BitMode flips the
 ; installer into 64-bit mode so {pf} resolves to the real "Program Files".
-ArchitecturesAllowed=x64
-ArchitecturesInstallIn64BitMode=x64
+; "x64compatible" (Inno Setup 6.3+) admits both native x64 Windows and ARM64
+; Windows 11 running x64 apps under emulation; the plain "x64" identifier now
+; means x64-OS-only and rejects ARM64 machines with "This program does not
+; support the version of Windows your computer is running".
+ArchitecturesAllowed=x64compatible
+ArchitecturesInstallIn64BitMode=x64compatible
 DefaultDirName={pf}\OpenAstroPHD2
 DefaultGroupName=OpenAstro PHD2
 UninstallDisplayIcon={app}\phd2.exe
