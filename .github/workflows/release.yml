@@ -254,7 +254,7 @@ jobs:
           persist-credentials: false
 
       - name: Install build dependencies
-        run: brew install cmake wxwidgets cfitsio libnova gettext
+        run: brew install cmake wxwidgets cfitsio libnova gettext eigen
 
       # Produces a self-contained (Homebrew dylibs bundled) but UNSIGNED DMG:
       # users see a Gatekeeper warning until codesign + notarytool steps are

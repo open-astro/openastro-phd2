@@ -52,7 +52,7 @@ info "Building for macOS $(sw_vers -productVersion) arm64"
 # ---------------------------------------------------------------------------
 # Build dependencies (Homebrew). Mirrors what run_dmg.sh / CMakeLists need.
 # ---------------------------------------------------------------------------
-BUILD_DEPS=(cmake wxwidgets cfitsio libnova gettext)
+BUILD_DEPS=(cmake wxwidgets cfitsio libnova gettext eigen)
 
 check_deps() {
     if ! command -v brew >/dev/null 2>&1; then

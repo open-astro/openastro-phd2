@@ -90,7 +90,7 @@ for tool in cmake make brew wx-config install_name_tool hdiutil; do
 Missing build tool: $tool
 
 Install Homebrew (https://brew.sh) and the required formulae:
-  brew install cmake wxwidgets cfitsio libnova gettext
+  brew install cmake wxwidgets cfitsio libnova gettext eigen
 
 Xcode Command Line Tools provide make, install_name_tool, and hdiutil:
   xcode-select --install
