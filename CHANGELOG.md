@@ -10,6 +10,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ### Changed
 - Alpaca mount connect failures now show the server's own `ErrorMessage` (e.g. the ZWO/ASI hub's "Connection failed" when the mount is powered off or in use) with a hint to check power/exclusive use, instead of the misleading "HTTP 1031"-style dialog that presented an Alpaca error number as an HTTP status.
 
+### CI / packaging
+- `build-exe.ps1` now bootstraps its own prerequisites on a bare Windows machine: installs Git, VS Build Tools (C++ workload), CMake, and Inno Setup 6 via winget when missing (also finding the VS-bundled CMake/ctest), and downloads + builds wxWidgets 3.2.11 (static x64, SHA256 trust-on-first-use with pinning) into `C:\wxWidgets` when `WXWIN` isn't set up.
+
 ### Fixed
 - `phd2.exe` failed to launch on clean Windows 10 systems ("VCRUNTIME140_1.dll was not found"): the app-local Visual C++ runtime shipped by the installer was missing `vcruntime140_1.dll` (required by every x64 binary built with VS2019+) and the `msvcp140_1/_2/_atomic_wait/_codecvt_ids` satellites. All nine CRT DLLs are now vendored at a matching version (14.51) and installed alongside the exe, so PHD2 runs without the VC++ redistributable.
 - Alpaca camera connect no longer stalls for the full 15-second timeout against servers (e.g. the ZWO/ASI hub) that accept the connect request but never flip the `Connected` property to true: the poll loop now also probes `CameraState` after a 1-second grace period and proceeds as soon as the device is demonstrably alive.
