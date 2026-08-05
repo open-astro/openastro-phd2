@@ -92,7 +92,12 @@ bool RotatorAlpaca::WaitForConnected()
         {
             return true;
         }
-        if (attempt * kConnectPollIntervalMs >= positionProbeAfterMs)
+        // Probe at most once per second after the grace period: each probe is
+        // a blocking HTTP call, and firing it every poll iteration against a
+        // slow or blackholed endpoint could stretch the 10 s window into a
+        // multi-minute hang (curl timeouts are much longer than the poll
+        // interval).
+        if (attempt * kConnectPollIntervalMs >= positionProbeAfterMs && (attempt * kConnectPollIntervalMs) % 1000 == 0)
         {
             double position = 0.0;
             long positionErrorCode = 0;
