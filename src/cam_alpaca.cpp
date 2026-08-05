@@ -278,7 +278,9 @@ bool CameraAlpaca::Connect(const wxString& camId)
             {
                 int cameraState = 0;
                 long stateErrorCode = 0;
-                if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode))
+                // CameraState 5 = cameraError: the device is alive but faulted,
+                // so keep waiting rather than declaring it connected.
+                if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode) && cameraState != 5)
                 {
                     Debug.Write(wxString::Format(
                         "Alpaca Camera: Connected property did not update, but CameraState=%d; continuing\n", cameraState));
@@ -292,7 +294,7 @@ bool CameraAlpaca::Connect(const wxString& camId)
         {
             int cameraState = 0;
             long stateErrorCode = 0;
-            if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode))
+            if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode) && cameraState != 5)
             {
                 Debug.Write(wxString::Format(
                     "Alpaca Camera: Connected property did not update, but CameraState=%d; continuing\n", cameraState));

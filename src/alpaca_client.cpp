@@ -181,6 +181,10 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
         return false;
     }
 
+    // Reset so a transport-level failure (no Alpaca error body) can't leave a
+    // stale message from an earlier request for LastAlpacaError() callers.
+    m_lastAlpacaError.Clear();
+
     wxMutexLocker lock(m_mutex);
 
     m_response.str("");
@@ -523,6 +527,9 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
         Debug.Write("AlpacaClient: curl not initialized\n");
         return false;
     }
+
+    // See Get(): reset the retained Alpaca error message per request.
+    m_lastAlpacaError.Clear();
 
     wxMutexLocker lock(m_mutex);
 
@@ -1200,6 +1207,9 @@ bool AlpacaClient::PutAction(const wxString& endpoint, const wxString& action, c
         Debug.Write("AlpacaClient: curl not initialized\n");
         return false;
     }
+
+    // See Get(): reset the retained Alpaca error message per request.
+    m_lastAlpacaError.Clear();
 
     wxMutexLocker lock(m_mutex);
 
