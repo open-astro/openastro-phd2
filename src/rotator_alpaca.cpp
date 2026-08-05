@@ -79,11 +79,29 @@ bool RotatorAlpaca::WaitForConnected()
 
     Debug.Write(
         wxString::Format("Alpaca Rotator: waiting up to %d ms for device %ld to connect\n", kConnectTimeoutMs, m_deviceNumber));
+    // Some Alpaca servers (e.g. the ZWO/ASI hub) accept the connect PUT but
+    // never flip the Connected property to true (same quirk as the camera).
+    // After a short grace period also probe Position - a mandatory rotator
+    // property that only reads successfully on a live device - and accept
+    // that as proof of connection.
+    wxString positionEndpoint = wxString::Format("rotator/%ld/position", m_deviceNumber);
+    const int positionProbeAfterMs = 1000;
     for (int attempt = 0; attempt < attempts; ++attempt)
     {
         if (m_client->GetBool(endpoint, &connected, &errorCode) && connected)
         {
             return true;
+        }
+        if (attempt * kConnectPollIntervalMs >= positionProbeAfterMs)
+        {
+            double position = 0.0;
+            long positionErrorCode = 0;
+            if (m_client->GetDouble(positionEndpoint, &position, &positionErrorCode))
+            {
+                Debug.Write(wxString::Format(
+                    "Alpaca Rotator: Connected property did not update, but Position=%.2f reads; continuing\n", position));
+                return true;
+            }
         }
         wxMilliSleep(kConnectPollIntervalMs);
     }
