@@ -6,6 +6,10 @@
 # original reason to ship x86 are gone in the Alpaca-only build.
 
 $ErrorActionPreference = "Stop"
+# Windows PowerShell 5.1's Invoke-WebRequest repaints its progress bar on
+# every chunk, slowing large downloads by an order of magnitude or more.
+# Suppress it; the surrounding Write-Host lines already narrate progress.
+$ProgressPreference = "SilentlyContinue"
 
 Write-Host "Building PHD2 Installer (x64)" -ForegroundColor Green
 
