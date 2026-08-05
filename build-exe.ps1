@@ -50,6 +50,53 @@ if (Test-Path $BuildDir) {
 # Check for required tools, bootstrapping missing ones where we can.
 Write-Host "Checking for required tools..." -ForegroundColor Yellow
 
+# Bootstrap winget itself: fresh Windows 10 images often ship without App
+# Installer, and every other auto-install below depends on it. Grab the
+# latest release from Microsoft's GitHub along with its two dependency
+# packages and register them (needs an elevated shell, like the rest of the
+# installs here).
+function Install-Winget {
+    Write-Host "  winget not found; installing App Installer from github.com/microsoft/winget-cli..." -ForegroundColor Yellow
+    $tmp = Join-Path $env:TEMP "winget-bootstrap"
+    New-Item -ItemType Directory -Force -Path $tmp | Out-Null
+    try {
+        # TLS 1.2 is not the default on stock Windows PowerShell 5.1
+        [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor [Net.SecurityProtocolType]::Tls12
+        $release = Invoke-RestMethod "https://api.github.com/repos/microsoft/winget-cli/releases/latest"
+        $bundleUrl = ($release.assets | Where-Object { $_.name -like "*.msixbundle" } | Select-Object -First 1).browser_download_url
+        $depsUrl = ($release.assets | Where-Object { $_.name -like "DesktopAppInstaller_Dependencies.zip" } | Select-Object -First 1).browser_download_url
+        if (-not $bundleUrl) { throw "Could not locate msixbundle asset in the latest winget-cli release" }
+        if ($depsUrl) {
+            $depsZip = Join-Path $tmp "deps.zip"
+            Invoke-WebRequest -Uri $depsUrl -OutFile $depsZip
+            Expand-Archive $depsZip -DestinationPath (Join-Path $tmp "deps") -Force
+            Get-ChildItem (Join-Path $tmp "deps") -Recurse -Filter "*x64*.appx" | ForEach-Object {
+                try { Add-AppxPackage $_.FullName -ErrorAction Stop } catch {}
+            }
+        }
+        $bundle = Join-Path $tmp "AppInstaller.msixbundle"
+        Invoke-WebRequest -Uri $bundleUrl -OutFile $bundle
+        Add-AppxPackage $bundle
+        # winget lands in the WindowsApps alias dir which is already on PATH,
+        # but the alias can take a moment to materialize.
+        for ($i = 0; $i -lt 10 -and -not (Get-Command winget -ErrorAction SilentlyContinue); $i++) {
+            Start-Sleep -Seconds 2
+        }
+        return [bool](Get-Command winget -ErrorAction SilentlyContinue)
+    } catch {
+        Write-Host "  winget bootstrap failed: $_" -ForegroundColor Yellow
+        return $false
+    } finally {
+        Remove-Item -Recurse -Force $tmp -ErrorAction SilentlyContinue
+    }
+}
+if (-not (Get-Command winget -ErrorAction SilentlyContinue)) {
+    if (-not (Install-Winget)) {
+        Write-Error "winget is unavailable and could not be bootstrapped. Install 'App Installer' from the Microsoft Store, then re-run."
+        exit 1
+    }
+}
+
 # Best-effort winget install; returns $true if winget is present and the
 # install command completed (which includes "already installed").
 function Install-WithWinget([string]$PackageId, [string]$DisplayName) {
