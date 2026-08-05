@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+- Windows installer offers a "Create a desktop icon" option (checked by default); the icon is removed on uninstall.
+
 ### Changed
 - Alpaca mount connect failures now show the server's own `ErrorMessage` (e.g. the ZWO/ASI hub's "Connection failed" when the mount is powered off or in use) with a hint to check power/exclusive use, instead of the misleading "HTTP 1031"-style dialog that presented an Alpaca error number as an HTTP status.
 
