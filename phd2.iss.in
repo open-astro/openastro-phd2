@@ -84,8 +84,16 @@ Source: Release\concrt140.dll; DestDir: {app}; Flags: replacesameversion
 ; Dark library migration script
 Source: ..\build\dark_mover.vbs; DestDir: {tmp}; Flags: replacesameversion
 
+[Tasks]
+; Checked by default; the user can untick it on the install options page.
+Name: desktopicon; Description: {cm:CreateDesktopIcon}; GroupDescription: {cm:AdditionalIcons}
+
 [Icons]
 Name: {group}\OpenAstro PHD2; FileName: {app}\phd2.exe
+; {autodesktop} resolves to the all-users desktop for admin installs and the
+; user's own desktop otherwise. Icons created here are removed automatically
+; by the uninstaller.
+Name: {autodesktop}\OpenAstro PHD2; Filename: {app}\phd2.exe; Tasks: desktopicon
 
 [Run]
 Filename: {tmp}\dark_mover.vbs; Description: Relocate dark files; Flags: shellexec waituntilterminated
