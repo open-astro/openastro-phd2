@@ -124,6 +124,12 @@ wxString AlpacaClient::GetBaseUrl() const
     return wxString::Format("http://%s:%ld/api/v1", m_host, m_port);
 }
 
+wxString AlpacaClient::LastAlpacaError()
+{
+    wxMutexLocker lock(m_mutex);
+    return m_lastAlpacaError;
+}
+
 wxString AlpacaClient::BuildRequestUrl(const wxString& endpoint) const
 {
     if (endpoint.StartsWith("http://") || endpoint.StartsWith("https://"))
@@ -181,11 +187,11 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
         return false;
     }
 
+    wxMutexLocker lock(m_mutex);
+
     // Reset so a transport-level failure (no Alpaca error body) can't leave a
     // stale message from an earlier request for LastAlpacaError() callers.
     m_lastAlpacaError.Clear();
-
-    wxMutexLocker lock(m_mutex);
 
     m_response.str("");
     m_response.clear();
@@ -528,10 +534,10 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
         return false;
     }
 
+    wxMutexLocker lock(m_mutex);
+
     // See Get(): reset the retained Alpaca error message per request.
     m_lastAlpacaError.Clear();
-
-    wxMutexLocker lock(m_mutex);
 
     m_response.str("");
     m_response.clear();
@@ -1208,10 +1214,10 @@ bool AlpacaClient::PutAction(const wxString& endpoint, const wxString& action, c
         return false;
     }
 
+    wxMutexLocker lock(m_mutex);
+
     // See Get(): reset the retained Alpaca error message per request.
     m_lastAlpacaError.Clear();
-
-    wxMutexLocker lock(m_mutex);
 
     m_response.str("");
     m_response.clear();

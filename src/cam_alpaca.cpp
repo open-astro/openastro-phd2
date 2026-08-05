@@ -274,7 +274,10 @@ bool CameraAlpaca::Connect(const wxString& camId)
             {
                 break;
             }
-            if (attempt * pollIntervalMs >= stateProbeAfterMs)
+            // Probe at most once per second after the grace period so a
+            // faulted device doesn't double the polling rate for the rest
+            // of the timeout window.
+            if (attempt * pollIntervalMs >= stateProbeAfterMs && (attempt * pollIntervalMs) % 1000 == 0)
             {
                 int cameraState = 0;
                 long stateErrorCode = 0;

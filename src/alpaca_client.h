@@ -53,8 +53,8 @@ private:
     std::stringstream m_response;
     wxMutex m_mutex;
     // Human-readable ErrorMessage from the most recent Alpaca API error
-    // response. Only meaningful immediately after a Get/Put/etc. returned
-    // false; read it from the same thread that made the failed call.
+    // response, cleared at the start of each request. Guarded by m_mutex;
+    // only meaningful immediately after a Get/Put/etc. returned false.
     wxString m_lastAlpacaError;
 
     static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
@@ -86,7 +86,9 @@ public:
 
     // ErrorMessage text from the last Alpaca API error (empty if the last
     // failure was transport/HTTP-level rather than an Alpaca error response).
-    const wxString& LastAlpacaError() const { return m_lastAlpacaError; }
+    // Returns a copy taken under the client mutex so callers can't race a
+    // concurrent request updating the message.
+    wxString LastAlpacaError();
 };
 
 #endif // ALPACA_CLIENT_H
