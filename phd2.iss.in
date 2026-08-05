@@ -68,9 +68,18 @@ Source: Release\liblzma.dll; DestDir: {app}; Flags: replacesameversion
 ; matching installed VC++ Redistributable, typically:
 ;   C:\Program Files\Microsoft Visual Studio\2022\<edition>\VC\Redist\MSVC\<ver>\x64\
 ; so the shipped runtime matches the one phd2.exe was linked against.
+; vcruntime140_1.dll is required by any x64 binary built with VS2019 or later;
+; without it phd2.exe fails to launch on clean Windows 10 systems that never
+; had the VC++ redistributable installed. The msvcp140_* satellites cover the
+; C++17/20 library features split out of msvcp140.dll.
 Source: Release\msvcp140.dll; DestDir: {app}; Flags: replacesameversion
+Source: Release\msvcp140_1.dll; DestDir: {app}; Flags: replacesameversion
+Source: Release\msvcp140_2.dll; DestDir: {app}; Flags: replacesameversion
+Source: Release\msvcp140_atomic_wait.dll; DestDir: {app}; Flags: replacesameversion
+Source: Release\msvcp140_codecvt_ids.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\vcomp140.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\vcruntime140.dll; DestDir: {app}; Flags: replacesameversion
+Source: Release\vcruntime140_1.dll; DestDir: {app}; Flags: replacesameversion
 Source: Release\concrt140.dll; DestDir: {app}; Flags: replacesameversion
 ; Dark library migration script
 Source: ..\build\dark_mover.vbs; DestDir: {tmp}; Flags: replacesameversion

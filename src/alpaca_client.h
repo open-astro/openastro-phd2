@@ -52,6 +52,10 @@ private:
     std::atomic<long> m_clientTransactionId;
     std::stringstream m_response;
     wxMutex m_mutex;
+    // Human-readable ErrorMessage from the most recent Alpaca API error
+    // response. Only meaningful immediately after a Get/Put/etc. returned
+    // false; read it from the same thread that made the failed call.
+    wxString m_lastAlpacaError;
 
     static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
     wxString BuildRequestUrl(const wxString& endpoint) const;
@@ -79,6 +83,10 @@ public:
     bool PutAction(const wxString& endpoint, const wxString& action, const wxString& params, long *errorCode = nullptr);
 
     wxString GetBaseUrl() const;
+
+    // ErrorMessage text from the last Alpaca API error (empty if the last
+    // failure was transport/HTTP-level rather than an Alpaca error response).
+    const wxString& LastAlpacaError() const { return m_lastAlpacaError; }
 };
 
 #endif // ALPACA_CLIENT_H

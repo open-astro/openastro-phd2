@@ -367,6 +367,7 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
     {
         Debug.Write(wxString::Format("AlpacaClient PUT: Alpaca API error for %s: ErrorNumber=%d, ErrorMessage=%s\n", endpoint,
                                      alpacaErrorNumber, alpacaErrorMessage));
+        m_lastAlpacaError = alpacaErrorMessage;
         if (errorCode)
         {
             *errorCode = alpacaErrorNumber;
@@ -642,6 +643,7 @@ bool AlpacaClient::Put(const wxString& endpoint, const wxString& params, JsonPar
     {
         Debug.Write(wxString::Format("AlpacaClient PUT: Alpaca API error for %s: ErrorNumber=%d, ErrorMessage=%s\n", endpoint,
                                      alpacaErrorNumber, alpacaErrorMessage));
+        m_lastAlpacaError = alpacaErrorMessage;
         if (errorCode)
         {
             *errorCode = alpacaErrorNumber;
@@ -1323,6 +1325,7 @@ bool AlpacaClient::PutAction(const wxString& endpoint, const wxString& action, c
     {
         Debug.Write(wxString::Format("AlpacaClient PutAction: Alpaca API error for %s: ErrorNumber=%d, ErrorMessage=%s\n",
                                      endpoint, alpacaErrorNumber, alpacaErrorMessage));
+        m_lastAlpacaError = alpacaErrorMessage;
         if (errorCode)
         {
             *errorCode = alpacaErrorNumber;

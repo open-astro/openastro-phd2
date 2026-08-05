@@ -7,7 +7,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Alpaca mount connect failures now show the server's own `ErrorMessage` (e.g. the ZWO/ASI hub's "Connection failed" when the mount is powered off or in use) with a hint to check power/exclusive use, instead of the misleading "HTTP 1031"-style dialog that presented an Alpaca error number as an HTTP status.
+
 ### Fixed
+- `phd2.exe` failed to launch on clean Windows 10 systems ("VCRUNTIME140_1.dll was not found"): the app-local Visual C++ runtime shipped by the installer was missing `vcruntime140_1.dll` (required by every x64 binary built with VS2019+) and the `msvcp140_1/_2/_atomic_wait/_codecvt_ids` satellites. All nine CRT DLLs are now vendored at a matching version (14.51) and installed alongside the exe, so PHD2 runs without the VC++ redistributable.
+- Alpaca camera connect no longer stalls for the full 15-second timeout against servers (e.g. the ZWO/ASI hub) that accept the connect request but never flip the `Connected` property to true: the poll loop now also probes `CameraState` after a 1-second grace period and proceeds as soon as the device is demonstrably alive.
 - Windows installer refused to run on ARM64 Windows 11 ("This program does not support the version of Windows your computer is running"). Inno Setup 6.3+ redefined `x64` to mean x64-OS-only; the installer now uses `x64compatible`, which admits native x64 and ARM64 Windows running x64 apps under emulation.
 
 ## [2.1.0] - 2026-07-15
