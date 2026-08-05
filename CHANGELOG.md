@@ -7,6 +7,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.0] - 2026-08-05
+
 ### Added
 - Windows installer offers a "Create a desktop icon" option (checked by default); the icon is removed on uninstall.
 
@@ -21,6 +23,23 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Alpaca rotator failed to connect entirely against servers with the same never-reports-`Connected` quirk (worked in NINA): the 10-second wait now also probes the mandatory `Position` property after a 1-second grace period and accepts a successful read as proof of connection.
 - Alpaca camera connect no longer stalls for the full 15-second timeout against servers (e.g. the ZWO/ASI hub) that accept the connect request but never flip the `Connected` property to true: the poll loop now also probes `CameraState` after a 1-second grace period and proceeds as soon as the device is demonstrably alive.
 - Windows installer refused to run on ARM64 Windows 11 ("This program does not support the version of Windows your computer is running"). Inno Setup 6.3+ redefined `x64` to mean x64-OS-only; the installer now uses `x64compatible`, which admits native x64 and ARM64 Windows running x64 apps under emulation.
+
+### Commit References
+- `87b1f784` - fix(alpaca): throttle rotator Position probe like the camera probe
+- `62be8455` - fix(alpaca): take m_lastAlpacaError fully under the client mutex
+- `e7ae867b` - fix(alpaca): address PR review - stale error message, cameraError state
+- `b4d48cda` - docs: changelog entry for installer desktop icon
+- `430b1798` - feat(win): optional desktop icon in the installer
+- `c6b39bcf` - fix(alpaca): rotator connect against servers that never report Connected
+- `672ca230` - build(win): drop duplicated ProgressPreference block
+- `24e4c77a` - build(win): fast downloads in build-exe.ps1 on Windows PowerShell 5.1
+- `307d9eac` - build(win): suppress Invoke-WebRequest progress bar in build-exe.ps1
+- `a1051500` - build(win): bootstrap winget itself in build-exe.ps1
+- `2155622e` - build(win): make build-exe.ps1 bootstrap its own prerequisites
+- `924db8b7` - fix(win): ship complete VC++ runtime; speed up and clarify Alpaca connects
+- `11d2779e` - Bump the actions group with 2 updates (#21)
+- `1b08fdc9` - Bump the actions group with 4 updates (#20)
+- `2d83d304` - Bump the actions group with 3 updates (#19)
 
 ## [2.1.0] - 2026-07-15
 
