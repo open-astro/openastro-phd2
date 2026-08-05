@@ -453,8 +453,16 @@ if(WIN32)
 
   list(APPEND PHD_COPY_EXTERNAL_ALL
     ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/msvcp140.dll
+    ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/msvcp140_1.dll
+    ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/msvcp140_2.dll
+    ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/msvcp140_atomic_wait.dll
+    ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/msvcp140_codecvt_ids.dll
     ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/vcomp140.dll
     ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/vcruntime140.dll
+    # vcruntime140_1.dll is REQUIRED by any x64 binary built with VS2019+;
+    # omitting it made phd2.exe fail to launch on clean Windows 10 systems
+    # that never had the VC++ redistributable installed.
+    ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/vcruntime140_1.dll
     ${PHD_PROJECT_ROOT_DIR}/WinLibs/x64/concrt140.dll
   )
 

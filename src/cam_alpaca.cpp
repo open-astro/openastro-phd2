@@ -261,11 +261,35 @@ bool CameraAlpaca::Connect(const wxString& camId)
         }
         Debug.Write(wxString::Format("Alpaca Camera: waiting up to %d ms for device %ld to connect\n", connectTimeoutMs,
                                      m_deviceNumber));
+        // Some Alpaca servers (e.g. the ZWO/ASI hub) accept the connect PUT
+        // but never flip the Connected property to true. Rather than burning
+        // the whole timeout polling a property that will never change, also
+        // probe CameraState after a short grace period: a readable
+        // CameraState means the device is alive and usable.
+        wxString stateEndpoint = wxString::Format("camera/%ld/camerastate", m_deviceNumber);
+        const int stateProbeAfterMs = 1000;
         for (int attempt = 0; attempt < attempts; ++attempt)
         {
             if (m_client->GetBool(endpoint, &nowConnected, &verifyErrorCode) && nowConnected)
             {
                 break;
+            }
+            // Probe at most once per second after the grace period so a
+            // faulted device doesn't double the polling rate for the rest
+            // of the timeout window.
+            if (attempt * pollIntervalMs >= stateProbeAfterMs && (attempt * pollIntervalMs) % 1000 == 0)
+            {
+                int cameraState = 0;
+                long stateErrorCode = 0;
+                // CameraState 5 = cameraError: the device is alive but faulted,
+                // so keep waiting rather than declaring it connected.
+                if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode) && cameraState != 5)
+                {
+                    Debug.Write(wxString::Format(
+                        "Alpaca Camera: Connected property did not update, but CameraState=%d; continuing\n", cameraState));
+                    nowConnected = true;
+                    break;
+                }
             }
             wxMilliSleep(pollIntervalMs);
         }
@@ -273,8 +297,7 @@ bool CameraAlpaca::Connect(const wxString& camId)
         {
             int cameraState = 0;
             long stateErrorCode = 0;
-            wxString stateEndpoint = wxString::Format("camera/%ld/camerastate", m_deviceNumber);
-            if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode))
+            if (m_client->GetInt(stateEndpoint, &cameraState, &stateErrorCode) && cameraState != 5)
             {
                 Debug.Write(wxString::Format(
                     "Alpaca Camera: Connected property did not update, but CameraState=%d; continuing\n", cameraState));

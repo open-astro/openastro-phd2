@@ -122,8 +122,21 @@ bool ScopeAlpaca::Connect()
             JsonParser parser;
             if (!m_client->Put(connectEndpoint, params, parser, &errorCode))
             {
-                wxMessageBox(_T("Alpaca driver problem -- cannot connect device"), _("Error"), wxOK | wxICON_ERROR);
-                throw ERROR_INFO("Alpaca Mount: Could not connect device, HTTP " + wxString::Format("%ld", errorCode));
+                // Surface the server's own ErrorMessage when we got a proper
+                // Alpaca error response (e.g. the hub answering "Connection
+                // failed" because the mount is powered off or in use) rather
+                // than a bare numeric code the user can't act on.
+                wxString serverMsg = m_client->LastAlpacaError();
+                wxString msg;
+                if (!serverMsg.IsEmpty())
+                    msg = wxString::Format(_("The Alpaca server could not connect to the mount: %s (error %ld).\n\n"
+                                             "Check that the mount is powered on, initialized, and not in use by "
+                                             "another application."),
+                                           serverMsg, errorCode);
+                else
+                    msg = wxString::Format(_("Alpaca driver problem -- cannot connect device (error %ld)"), errorCode);
+                wxMessageBox(msg, _("Error"), wxOK | wxICON_ERROR);
+                throw ERROR_INFO("Alpaca Mount: Could not connect device, error " + wxString::Format("%ld", errorCode));
             }
         }
 
