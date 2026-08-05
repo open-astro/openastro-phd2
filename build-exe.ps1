@@ -7,6 +7,23 @@
 
 $ErrorActionPreference = "Stop"
 # Windows PowerShell 5.1's Invoke-WebRequest repaints its progress bar on
+# every received chunk, slowing large downloads by 10-50x. Suppress it; the
+# surrounding Write-Host lines already narrate progress.
+$ProgressPreference = "SilentlyContinue"
+
+# Download helper: prefer the native curl.exe (ships with Windows 10 1803+,
+# dramatically faster than Invoke-WebRequest on Windows PowerShell 5.1),
+# falling back to Invoke-WebRequest where curl is unavailable.
+function Get-RemoteFile([string]$Uri, [string]$OutFile) {
+    $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+    if ($curl) {
+        & $curl.Source -L --fail --silent --show-error -o $OutFile $Uri
+        if ($LASTEXITCODE -eq 0) { return }
+        Write-Host "  curl download failed (exit $LASTEXITCODE); retrying with Invoke-WebRequest" -ForegroundColor Yellow
+    }
+    Invoke-WebRequest -Uri $Uri -OutFile $OutFile
+}
+# Windows PowerShell 5.1's Invoke-WebRequest repaints its progress bar on
 # every chunk, slowing large downloads by an order of magnitude or more.
 # Suppress it; the surrounding Write-Host lines already narrate progress.
 $ProgressPreference = "SilentlyContinue"
@@ -72,14 +89,14 @@ function Install-Winget {
         if (-not $bundleUrl) { throw "Could not locate msixbundle asset in the latest winget-cli release" }
         if ($depsUrl) {
             $depsZip = Join-Path $tmp "deps.zip"
-            Invoke-WebRequest -Uri $depsUrl -OutFile $depsZip
+            Get-RemoteFile $depsUrl $depsZip
             Expand-Archive $depsZip -DestinationPath (Join-Path $tmp "deps") -Force
             Get-ChildItem (Join-Path $tmp "deps") -Recurse -Filter "*x64*.appx" | ForEach-Object {
                 try { Add-AppxPackage $_.FullName -ErrorAction Stop } catch {}
             }
         }
         $bundle = Join-Path $tmp "AppInstaller.msixbundle"
-        Invoke-WebRequest -Uri $bundleUrl -OutFile $bundle
+        Get-RemoteFile $bundleUrl $bundle
         Add-AppxPackage $bundle
         # winget lands in the WindowsApps alias dir which is already on PATH,
         # but the alias can take a moment to materialize.
@@ -236,7 +253,7 @@ if (-not (Test-WxDir $env:WXWIN)) {
         }
         Write-Host "  Bootstrapping wxWidgets $WxBootstrapVersion (static x64) into $WxBootstrapDir - this takes 20-40 min, one time only" -ForegroundColor Yellow
         $wxZip = Join-Path $env:TEMP "wxWidgets-$WxBootstrapVersion.zip"
-        Invoke-WebRequest -Uri "https://github.com/wxWidgets/wxWidgets/releases/download/v$WxBootstrapVersion/wxWidgets-$WxBootstrapVersion.zip" -OutFile $wxZip
+        Get-RemoteFile "https://github.com/wxWidgets/wxWidgets/releases/download/v$WxBootstrapVersion/wxWidgets-$WxBootstrapVersion.zip" $wxZip
         $actualHash = (Get-FileHash -Algorithm SHA256 $wxZip).Hash.ToLowerInvariant()
         if ($WxBootstrapHash) {
             if ($actualHash -ne $WxBootstrapHash) {
