@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### CI / packaging
+- Linux CI no longer depends on `ppa:mutlaqja/ppa` for libindi. The PPA's libindi 2.x packages were deleted on 2026-08-25, which made every Linux job fall back to Ubuntu's libindi 1.9.9 and fail configure. All Linux workflows now build the pinned INDI 2.2.1.1 client from source (`USE_SYSTEM_LIBINDI=0`), the same path `debian/rules` already used when no suitable system libindi is present; the clang-tidy job builds the INDI target first so its headers exist.
+
 ## [2.2.0] - 2026-08-05
 
 ### Added

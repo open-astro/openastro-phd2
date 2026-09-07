@@ -1,9 +1,9 @@
 name: Build and Test
 
 # Post-merge build safety net: configure, build, and run the test suite on a
-# Debian/Ubuntu runner. It installs libindi 2.x from the official INDI PPA
-# (Ubuntu's own universe still ships 1.9.9, below the required 2.0) rather
-# than the from-source INDI path in run_deb.sh, and builds open-source-only
+# Debian/Ubuntu runner. It builds the pinned libindi 2.x client from source
+# (Ubuntu's own universe still ships 1.9.9, below the required 2.0, and the
+# INDI PPA no longer publishes libindi), and builds open-source-only
 # (no proprietary camera SDKs).
 #
 # Deliberately NOT run on pull requests: the full compile takes long enough
@@ -44,16 +44,17 @@ jobs:
 
       # Dependency list is derived from debian/control Build-Depends and the
       # apt hint in run_deb.sh. wxWidgets 3.2 dev, cfitsio, libnova, gettext,
-      # libindi-dev, opencv, eigen, curl, gtest. USE_SYSTEM_LIBINDI/GTEST=1
-      # so we link the distro packages instead of building them from source.
+      # opencv, eigen, curl, gtest. USE_SYSTEM_GTEST=1 links the distro gtest.
+      #
+      # libindi is deliberately NOT taken from apt. Ubuntu's universe ships
+      # libindi 1.9.9 but the project requires INDI >= 2.0, and the INDI PPA
+      # (ppa:mutlaqja/ppa) that used to supply 2.x had its libindi packages
+      # deleted on 2026-08-25, which broke every Linux job. USE_SYSTEM_LIBINDI=0
+      # makes thirdparty/thirdparty.cmake build the pinned INDI client
+      # statically from the indilib/indi git tag instead (~3 min), which
+      # removes the third-party apt source from CI entirely.
       - name: Install build dependencies
         run: |
-          # Ubuntu's universe ships libindi 1.9.9, but the project requires
-          # INDI >= 2.0. The official INDI PPA (maintained by the INDI project
-          # lead) provides current libindi 2.x. Trust boundary: this adds a
-          # third-party apt source to the CI runner; it only supplies libindi
-          # dev packages used at build time, not runtime artifacts we ship.
-          sudo add-apt-repository -y ppa:mutlaqja/ppa
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             build-essential \
@@ -64,7 +65,6 @@ jobs:
             wx-common \
             libcfitsio-dev \
             libnova-dev \
-            libindi-dev \
             libopencv-dev \
             libeigen3-dev \
             libv4l-dev \
@@ -78,7 +78,7 @@ jobs:
           cmake -S . -B build \
             -Wno-dev \
             -DCMAKE_BUILD_TYPE=Release \
-            -DUSE_SYSTEM_LIBINDI=1 \
+            -DUSE_SYSTEM_LIBINDI=0 \
             -DUSE_SYSTEM_GTEST=1 \
             -DOPENSOURCE_ONLY=1
 
