@@ -34,11 +34,10 @@ jobs:
       # Same dependency set as build.yml.
       - name: Install build dependencies
         run: |
-          sudo add-apt-repository -y ppa:mutlaqja/ppa
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             build-essential cmake pkg-config gettext \
-            libwxgtk3.2-dev wx-common libcfitsio-dev libnova-dev libindi-dev \
+            libwxgtk3.2-dev wx-common libcfitsio-dev libnova-dev \
             libopencv-dev libeigen3-dev libv4l-dev libcurl4-gnutls-dev \
             libgtest-dev zlib1g-dev libx11-dev
 
@@ -59,7 +58,7 @@ jobs:
           cmake -S . -B build \
             -Wno-dev \
             -DCMAKE_BUILD_TYPE=Release \
-            -DUSE_SYSTEM_LIBINDI=1 \
+            -DUSE_SYSTEM_LIBINDI=0 \
             -DUSE_SYSTEM_GTEST=1 \
             -DOPENSOURCE_ONLY=1
           cmake --build build --parallel 2
