@@ -92,12 +92,13 @@ jobs:
           persist-credentials: false
 
       # Same dependency set as build.yml plus the Debian packaging tools.
-      # The INDI PPA supplies libindi 2.x for both amd64 and arm64 (Launchpad
-      # builds both); if it were ever missing, debian/rules falls back to
-      # building INDI 2.2.1.1 from source automatically.
+      # Unlike build.yml, libindi-dev IS installed here — Ubuntu's 1.9.9 from
+      # universe, no PPA (see build.yml for why). It exists only to satisfy
+      # debian/control's Build-Depends so dpkg-buildpackage proceeds without
+      # -d; debian/rules sees it is < 2.0.0 and builds INDI 2.2.1.1 from
+      # source via the ExternalProject instead, on both amd64 and arm64.
       - name: Install build dependencies
         run: |
-          sudo add-apt-repository -y ppa:mutlaqja/ppa
           sudo apt-get update -q
           sudo apt-get install -y -q --no-install-recommends \
             build-essential \
