@@ -146,6 +146,12 @@ void AlpacaClient::SetLogRequests(bool log)
     m_logRequests = log;
 }
 
+void AlpacaClient::SetGetAttempts(int attempts)
+{
+    wxMutexLocker lock(m_mutex);
+    m_getAttempts = attempts < 1 ? 1 : attempts;
+}
+
 wxString AlpacaClient::BuildRequestUrl(const wxString& endpoint) const
 {
     if (endpoint.StartsWith("http://") || endpoint.StartsWith("https://"))
@@ -238,7 +244,7 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
 
     // Retry logic for curl error 52 (server closes connection) - like NINA/ASCOM library does
     CURLcode res;
-    int retries = 3;
+    int retries = m_getAttempts;
     for (int retry = 0; retry < retries; retry++)
     {
         res = curl_easy_perform(m_curl);

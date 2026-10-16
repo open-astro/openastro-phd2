@@ -106,6 +106,7 @@ private:
     std::optional<int> m_camera;
     bool m_exposing = false;
     Snapshot m_work;
+    Snapshot m_reported; // last settled positions, for INFO: EQUIPMENT lines
     std::chrono::steady_clock::time_point m_lastFull, m_lastConditions;
     bool m_needFull = true;
 

@@ -45,9 +45,22 @@ namespace
         return v ? Fmt(fmt, *v) : UNKNOWN;
     }
 
+    // text from the server: no line breaks or commas, which delimit the log's records and values
+    std::string Clean(std::string s)
+    {
+        for (char& c : s)
+        {
+            if ((unsigned char) c < 0x20)
+                c = ' ';
+            else if (c == ',')
+                c = ';';
+        }
+        return s;
+    }
+
     std::string Str(const std::optional<std::string>& v)
     {
-        return v && !v->empty() ? *v : UNKNOWN;
+        return v && !v->empty() ? Clean(*v) : UNKNOWN;
     }
 
     // telescope focal length / aperture: 0 means "left blank", so unknown
@@ -69,7 +82,7 @@ namespace
     std::string FilterName(const FilterWheel& fw)
     {
         if (fw.position && *fw.position >= 0 && *fw.position < (int) fw.names.size())
-            return fw.names[*fw.position];
+            return Clean(fw.names[*fw.position]);
         return UNKNOWN;
     }
 
@@ -118,6 +131,11 @@ namespace
     }
 }
 
+std::string CleanText(std::string s)
+{
+    return Clean(std::move(s));
+}
+
 std::optional<double> PixelScale(const Snapshot& s)
 {
     if (!s.telescope || !s.camera)
@@ -137,7 +155,7 @@ std::string HeaderLines(const Snapshot& s, double guideFocalLengthMm)
     if (s.source == Source::Unavailable)
         return "Equipment source = unavailable\n";
 
-    std::string out = "Equipment source = " + s.server + "\n";
+    std::string out = "Equipment source = " + Clean(s.server) + "\n";
 
     std::optional<double> imagingFocalMm;
     if (s.telescope)
@@ -148,7 +166,7 @@ std::string HeaderLines(const Snapshot& s, double guideFocalLengthMm)
         std::optional<double> ratio;
         if (imagingFocalMm && apertureMm)
             ratio = *imagingFocalMm / *apertureMm;
-        out += "Imaging telescope = " + t.name + ", Focal length = " + Num(imagingFocalMm, "%.0f mm") +
+        out += "Imaging telescope = " + Clean(t.name) + ", Focal length = " + Num(imagingFocalMm, "%.0f mm") +
             ", Aperture = " + Num(apertureMm, "%.0f mm") + ", Focal ratio = " + Num(ratio, "f/%.1f") + "\n";
     }
 
@@ -160,7 +178,7 @@ std::string HeaderLines(const Snapshot& s, double guideFocalLengthMm)
         std::string sensorSize = c.sizeX && c.sizeY ? Fmt("%d x %d px", *c.sizeX, *c.sizeY) : UNKNOWN;
         std::string binning = c.binX && c.binY ? Fmt("%dx%d", *c.binX, *c.binY) : UNKNOWN;
         std::string cooler = c.coolerOn ? (*c.coolerOn ? "On" : "Off") : UNKNOWN;
-        out += "Imaging camera = " + c.name + ", Sensor = " + Str(c.sensorName) +
+        out += "Imaging camera = " + Clean(c.name) + ", Sensor = " + Str(c.sensorName) +
             ", Sensor type = " + SensorTypeName(c.sensorType) + ", Pixel size = " + pixelSize +
             ", Sensor size = " + sensorSize + ", Binning = " + binning +
             ", Pixel scale = " + Num(PixelScale(s), "%.2f arc-sec/px") + ", Gain = " + Int(c.gain) +
@@ -171,20 +189,20 @@ std::string HeaderLines(const Snapshot& s, double guideFocalLengthMm)
         out += Fmt("Imaging camera = ambiguous (%d cameras)\n", s.ambiguousCameras);
 
     if (s.filterWheel)
-        out += "Filter wheel = " + s.filterWheel->name + ", " + FilterValues(*s.filterWheel) + "\n";
+        out += "Filter wheel = " + Clean(s.filterWheel->name) + ", " + FilterValues(*s.filterWheel) + "\n";
 
     if (s.rotator)
     {
         const Rotator& r = *s.rotator;
         std::string reverse = r.reverse ? (*r.reverse ? "true" : "false") : UNKNOWN;
-        out += "Rotator = " + r.name + ", Position = " + Num(r.position, "%.1f deg") +
+        out += "Rotator = " + Clean(r.name) + ", Position = " + Num(r.position, "%.1f deg") +
             ", Mechanical position = " + Num(r.mechanicalPosition, "%.1f deg") + ", Reverse = " + reverse + "\n";
     }
 
     if (s.focuser)
     {
         const Focuser& f = *s.focuser;
-        out += "Focuser = " + f.name + ", Position = " + Int(f.position, "%d steps") +
+        out += "Focuser = " + Clean(f.name) + ", Position = " + Int(f.position, "%d steps") +
             ", Temperature = " + Num(f.temperature, "%.1f C") + "\n";
     }
 
@@ -192,7 +210,7 @@ std::string HeaderLines(const Snapshot& s, double guideFocalLengthMm)
     {
         // ASCOM defines StarFWHM as the seeing, in arc-sec
         const Conditions& oc = *s.conditions;
-        out += "Observing conditions = " + oc.name + ", Seeing = " + Num(oc.starFwhm, "%.1f arc-sec") +
+        out += "Observing conditions = " + Clean(oc.name) + ", Seeing = " + Num(oc.starFwhm, "%.1f arc-sec") +
             ", Star FWHM = " + Num(oc.starFwhm, "%.1f arc-sec") + ", Wind speed = " + Num(oc.windSpeed, "%.1f m/s") +
             ", Wind gust = " + Num(oc.windGust, "%.1f m/s") + ", Temperature = " + Num(oc.temperature, "%.1f C") +
             ", Humidity = " + Num(oc.humidity, "%.0f %%") + ", Dew point = " + Num(oc.dewPoint, "%.1f C") +

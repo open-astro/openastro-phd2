@@ -57,6 +57,7 @@ private:
     // only meaningful immediately after a Get/Put/etc. returned false.
     wxString m_lastAlpacaError;
     bool m_logRequests = true;
+    int m_getAttempts = 3;
 
     static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
     wxString BuildRequestUrl(const wxString& endpoint) const;
@@ -95,6 +96,8 @@ public:
     // and no debug log lines for successful GETs (failures are still logged).
     void SetTimeoutMs(long totalMs, long connectMs);
     void SetLogRequests(bool log);
+    // GET attempts when the server drops the connection (default 3)
+    void SetGetAttempts(int attempts);
 };
 
 #endif // ALPACA_CLIENT_H

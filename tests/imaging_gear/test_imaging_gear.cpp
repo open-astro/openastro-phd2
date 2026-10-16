@@ -262,3 +262,16 @@ TEST(ImagingGear, SelectDevicesNeedsExactlyOneOfAType)
     // the connected telescope wins over the exactly-one rule
     EXPECT_EQ(SelectDevices(devs, -1, 1, -1).telescope, 1);
 }
+
+TEST(ImagingGear, NamesCannotBreakTheLineFormat)
+{
+    Snapshot s;
+    s.source = Source::Alpaca;
+    s.server = "Bridge\n 10.0.0.2:11111";
+    Focuser f;
+    f.name = "EAF, v2\r\nINFO: fake";
+    s.focuser = f;
+    std::string h = HeaderLines(s, 0.0);
+    EXPECT_NE(h.find("Equipment source = Bridge  10.0.0.2:11111\n"), std::string::npos) << h;
+    EXPECT_NE(h.find("Focuser = EAF; v2  INFO: fake, Position = unknown"), std::string::npos) << h;
+}

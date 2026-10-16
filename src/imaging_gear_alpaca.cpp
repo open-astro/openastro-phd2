@@ -59,6 +59,7 @@ public:
     {
         m_client.SetTimeoutMs(READ_TIMEOUT_MS, READ_TIMEOUT_MS);
         m_client.SetLogRequests(false);
+        m_client.SetGetAttempts(1); // a dropped connection must not stretch a read past the timeout
     }
 
     bool ConfiguredDevices(std::vector<ImagingGear::ConfiguredDevice> *devices) override
