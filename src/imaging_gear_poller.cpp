@@ -45,7 +45,7 @@ namespace
     template<typename T, typename Get>
     std::optional<T> Read(Get get)
     {
-        T value { };
+        T value {};
         if (get(&value))
             return value;
         return std::nullopt;
@@ -280,7 +280,7 @@ std::chrono::milliseconds Poller::PollOnce()
         m_work.source = Source::NotAlpaca;
         m_exposing = false;
         m_needFull = true;
-        Publish(m_work, { });
+        Publish(m_work, {});
         return m_timing.fast;
     }
 
@@ -302,7 +302,7 @@ std::chrono::milliseconds Poller::PollOnce()
             m_work.source = Source::Unavailable;
             m_exposing = false;
             m_needFull = true;
-            Publish(m_work, { });
+            Publish(m_work, {});
             return m_timing.retry;
         }
 
