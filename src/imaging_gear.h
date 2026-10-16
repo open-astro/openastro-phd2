@@ -20,7 +20,7 @@ namespace ImagingGear
 struct ConfiguredDevice
 {
     std::string type; // as reported, e.g. "Camera", "FilterWheel"
-    int number;
+    int number = -1;
     std::string name;
 };
 

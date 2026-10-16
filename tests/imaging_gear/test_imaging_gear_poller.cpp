@@ -321,3 +321,26 @@ TEST(ImagingGearPoller, AWheelThatMovesBackToTheSameFilterIsNotAChange)
     ASSERT_EQ(lines.size(), 1u);
     EXPECT_EQ(lines[0], "INFO: EQUIPMENT Filter = OIII, Position = 4 of 4, Focus offset = 12");
 }
+
+TEST(ImagingGearPoller, AFailedDiscoveryKeepsTheLastKnownGear)
+{
+    FakeServer s;
+    Rig(s);
+    Poller::Timing t = Instant();
+    t.full = 0ms; // every poll rediscovers the devices
+    Poller p(FactoryFor(s), t, false);
+    p.SetContext(AlpacaContext());
+    p.PollOnce();
+
+    s.reachable = false;
+    p.PollOnce();
+    p.PollOnce();
+    EXPECT_EQ(p.Latest().source, Source::Alpaca); // two misses: still the last known gear
+    EXPECT_TRUE(p.Latest().camera.has_value());
+    p.PollOnce();
+    EXPECT_EQ(p.Latest().source, Source::Unavailable); // three in a row: unavailable
+
+    s.reachable = true;
+    p.PollOnce();
+    EXPECT_EQ(p.Latest().source, Source::Alpaca);
+}

@@ -102,5 +102,8 @@ From `GET management/v1/configureddevices` on the same server:
 - **Never slows guiding.** A background thread reads with a 2 s timeout (no retries) and keeps the latest
   values in a cache; the log writer only reads the cache. Fast values (camera state, filter,
   rotator, focuser) every 2 s, everything else and device discovery every 30 s, a retry every
-  10 s when the server can't be read. Successful reads aren't written to the debug log.
+  10 s when the server can't be read. One failed discovery keeps the last known gear; after
+  three in a row the header says `unavailable`. Successful reads aren't written to the debug log.
+- A header written in the first seconds after the guider connects, before the first read
+  completes, says `unavailable`.
 - **No settings.**

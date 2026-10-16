@@ -14,6 +14,7 @@ namespace ImagingGear
 namespace
 {
     const size_t MAX_QUEUED_LINES = 200;
+    const int MAX_FAILED_DISCOVERIES = 3;
 
     // Fails every read once stopping, so shutdown waits for the read in
     // flight only, not the rest of the poll cycle.
@@ -190,8 +191,9 @@ namespace
 
     // the last settled positions, for change detection: a wheel that is
     // moving (no position) keeps the filter it was last seen at
-    Snapshot KeepSettled(const Snapshot& reported, Snapshot cur)
+    Snapshot KeepSettled(const Snapshot& reported, const Snapshot& latest)
     {
+        Snapshot cur = latest;
         if (reported.filterWheel && cur.filterWheel && !cur.filterWheel->position)
             cur.filterWheel->position = reported.filterWheel->position;
         if (reported.rotator && cur.rotator && !cur.rotator->position)
@@ -235,7 +237,7 @@ namespace
         if (!s.filterWheel)
             return "";
         const FilterWheel& fw = *s.filterWheel;
-        if (fw.position && *fw.position < (int) fw.names.size())
+        if (fw.position && *fw.position >= 0 && *fw.position < (int) fw.names.size())
             return ", Filter = " + CleanText(fw.names[*fw.position]);
         return ", Filter = unknown";
     }
@@ -319,6 +321,12 @@ std::chrono::milliseconds Poller::PollOnce()
 
     if (!m_reader || ctx != m_readerContext)
     {
+        if (m_readerContext.host != ctx.host || m_readerContext.port != ctx.port)
+        {
+            m_work = Snapshot(); // another server's gear is no "last known" value
+            m_reported = Snapshot();
+            m_failedDiscoveries = 0;
+        }
         m_reader = m_factory(ctx.host, ctx.port);
         m_readerContext = ctx;
         m_needFull = true;
@@ -330,6 +338,11 @@ std::chrono::milliseconds Poller::PollOnce()
         std::vector<ConfiguredDevice> devices;
         if (!r.ConfiguredDevices(&devices))
         {
+            // one slow answer shouldn't blank the gear: keep the last known
+            // snapshot until several discoveries in a row have failed
+            m_needFull = true;
+            if (++m_failedDiscoveries < MAX_FAILED_DISCOVERIES && m_work.source == Source::Alpaca)
+                return m_timing.retry;
             m_work = Snapshot();
             m_reported = Snapshot();
             m_work.source = Source::Unavailable;
@@ -363,6 +376,7 @@ std::chrono::milliseconds Poller::PollOnce()
 
         m_work = s;
         m_lastFull = now;
+        m_failedDiscoveries = 0;
         m_needFull = false;
     }
     else
