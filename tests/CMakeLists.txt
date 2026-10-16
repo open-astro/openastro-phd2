@@ -121,3 +121,15 @@ add_executable(test_indi_discovery
 target_link_libraries(test_indi_discovery PRIVATE phd_test_common)
 set_property(TARGET test_indi_discovery PROPERTY FOLDER "Unit tests")
 add_test(NAME test_indi_discovery COMMAND test_indi_discovery)
+
+############################################################################
+# test_alpaca_gain  --  alpaca_gain.cpp: the GainMin/GainMax support
+# decision and the 0-100 % -> raw gain mapping CameraAlpaca uses. std-only.
+############################################################################
+add_executable(test_alpaca_gain
+  ${PHD_TESTS_DIR}/camera/test_alpaca_gain.cpp
+  ${phd_src_dir}/alpaca_gain.cpp
+)
+target_link_libraries(test_alpaca_gain PRIVATE phd_test_common)
+set_property(TARGET test_alpaca_gain PROPERTY FOLDER "Unit tests")
+add_test(NAME test_alpaca_gain COMMAND test_alpaca_gain)
