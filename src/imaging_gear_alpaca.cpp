@@ -245,7 +245,7 @@ std::string Header()
 std::vector<std::string> TakeInfoLines()
 {
     if (!s_poller)
-        return { };
+        return {};
     return s_poller->TakeInfoLines();
 }
 }
