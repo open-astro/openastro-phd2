@@ -37,6 +37,7 @@
 #ifdef ALPACA_CAMERA
 
 # include "alpaca_client.h"
+# include "alpaca_gain.h"
 
 class CameraAlpaca : public GuideCamera
 {
@@ -58,6 +59,9 @@ private:
     bool m_canStopExposure;
     bool m_canSetCoolerTemperature;
     bool m_canGetCoolerPower;
+
+    AlpacaGain::Range m_gainRange;
+    int m_lastRawGain; // last gain sent to the driver, -1 when unknown
 
     void ClearStatus();
     void CameraSetup();
