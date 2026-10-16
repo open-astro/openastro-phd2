@@ -39,6 +39,7 @@ GTest is fetched automatically via `FetchContent` (pinned to v1.17.0 in
 | `test_discovery_logic` | `host:port` parsing and the `std::set` dedupe model shared by `AlpacaDiscovery::DiscoverServers` and `INDIDiscovery::DiscoverServers` | Model: reproduces the dedupe / parse semantics in `std::string` form, so the actual sockets-bound functions don't have to be runnable in a unit-test process |
 | `test_indi_discovery` | `indi_discovery.cpp` INDI-specific math — subnet enumeration prefix clamping (16..30, default /24), mask construction, loopback skip, scan-range network/broadcast skip, the always-add-`127.0.0.1` contract from the 1.3.0 loopback fix | Model |
 | `test_guide_algorithm_math` | `result()` / `reset()` for `GuideAlgorithmIdentity`, `GuideAlgorithmHysteresis`, `GuideAlgorithmResistSwitch` | Math-twin: each algorithm's formula is reimplemented in the test alongside the production line numbers; tests pin the input/output curve on a fixed scenario |
+| `test_alpaca_gain` | `src/alpaca_gain.cpp` — the Alpaca camera gain support decision from `GainMin`/`GainMax` (ASCOM value mode, used by ZWO drivers) and the 0–100 % → raw gain mapping `CameraAlpaca::Capture` sends | Direct (extract-for-testability): wx-free helper linked unmodified |
 
 ## How the build infra works (and why)
 
