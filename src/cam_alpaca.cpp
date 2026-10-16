@@ -134,6 +134,9 @@ void CameraAlpaca::ClearStatus()
     m_driverPixelSize = 0.0;
     m_roi = wxRect();
     m_curBin = 1;
+    HasGainControl = false;
+    m_gainRange = AlpacaGain::Range { false, 0, 0 };
+    m_lastRawGain = -1;
 }
 
 wxByte CameraAlpaca::BitsPerPixel()
@@ -463,6 +466,21 @@ bool CameraAlpaca::Connect(const wxString& camId)
     if (m_client->GetInt(endpoint, &interfaceVersion, &errorCode))
     {
         m_driverVersion = interfaceVersion;
+    }
+
+    // Gain: ASCOM "value mode" (GainMin/GainMax), which ZWO drivers use
+    {
+        int gainMin = 0, gainMax = 0;
+        long minErr = 0, maxErr = 0;
+        bool minOk = m_client->GetInt(wxString::Format("camera/%ld/gainmin", m_deviceNumber), &gainMin, &minErr);
+        bool maxOk = m_client->GetInt(wxString::Format("camera/%ld/gainmax", m_deviceNumber), &gainMax, &maxErr);
+        m_gainRange = AlpacaGain::FromProbe(minOk, gainMin, maxOk, gainMax);
+        HasGainControl = m_gainRange.supported;
+        if (HasGainControl)
+            Debug.Write(wxString::Format("Alpaca Camera: gain range %d..%d\n", gainMin, gainMax));
+        else
+            Debug.Write(wxString::Format("Alpaca Camera: no gain control (gainmin err %ld, gainmax err %ld)\n",
+                                         minOk ? 0L : minErr, maxOk ? 0L : maxErr));
     }
 
     // Check if color sensor
@@ -823,6 +841,23 @@ bool CameraAlpaca::Capture(usImage& img, const CaptureParams& captureParams)
         }
 
         m_roi = roi;
+    }
+
+    // Set gain if changed. A failure is logged and the frame is taken anyway.
+    if (HasGainControl)
+    {
+        int rawGain = AlpacaGain::PercentToRaw(captureParams.gain, m_gainRange);
+        if (rawGain != m_lastRawGain)
+        {
+            wxString endpoint = wxString::Format("camera/%ld/gain", m_deviceNumber);
+            wxString params = wxString::Format("Gain=%d", rawGain);
+            long errorCode = 0;
+            JsonParser parser;
+            if (m_client->Put(endpoint, params, parser, &errorCode))
+                m_lastRawGain = rawGain;
+            else
+                Debug.Write(wxString::Format("Alpaca Camera: failed to set Gain=%d, error %ld\n", rawGain, errorCode));
+        }
     }
 
     bool takeDark = HasShutter && ShutterClosed;
