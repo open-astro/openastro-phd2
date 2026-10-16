@@ -279,3 +279,45 @@ TEST(ImagingGearPoller, StoppingDoesNotFinishASlowPollCycle)
     p.reset(); // waits for the read in flight only
     EXPECT_LT(std::chrono::steady_clock::now() - start, 1000ms);
 }
+
+TEST(ImagingGearPoller, AFailedReadIsNotAMove)
+{
+    FakeServer s;
+    Rig(s);
+    Poller p(FactoryFor(s), Instant(), false);
+    p.SetContext(AlpacaContext());
+    p.PollOnce();
+
+    s.ints.erase("filterwheel/0/position"); // one read times out
+    s.ints.erase("focuser/0/position");
+    p.PollOnce();
+    EXPECT_EQ(p.Latest().filterWheel->position, 2); // last known value kept
+    s.ints["filterwheel/0/position"] = 2;
+    s.ints["focuser/0/position"] = 12345;
+    p.PollOnce();
+    EXPECT_TRUE(p.TakeInfoLines().empty());
+}
+
+TEST(ImagingGearPoller, AWheelThatMovesBackToTheSameFilterIsNotAChange)
+{
+    FakeServer s;
+    Rig(s);
+    Poller p(FactoryFor(s), Instant(), false);
+    p.SetContext(AlpacaContext());
+    p.PollOnce();
+
+    s.ints["filterwheel/0/position"] = -1; // moving
+    p.PollOnce();
+    EXPECT_FALSE(p.Latest().filterWheel->position.has_value());
+    s.ints["filterwheel/0/position"] = 2;
+    p.PollOnce();
+    EXPECT_TRUE(p.TakeInfoLines().empty());
+
+    s.ints["filterwheel/0/position"] = -1;
+    p.PollOnce();
+    s.ints["filterwheel/0/position"] = 3;
+    p.PollOnce();
+    std::vector<std::string> lines = p.TakeInfoLines();
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_EQ(lines[0], "INFO: EQUIPMENT Filter = OIII, Position = 4 of 4, Focus offset = 12");
+}

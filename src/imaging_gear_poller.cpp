@@ -137,15 +137,20 @@ namespace
         return c;
     }
 
+    // The position readers keep the last value when a read fails, so a
+    // network blip isn't taken for a move.
     void ReadFilterPosition(Reader& r, int n, FilterWheel *fw)
     {
         std::optional<int> pos = ReadInt(r, Path("filterwheel", n, "position"));
-        fw->position = pos && *pos >= 0 ? pos : std::nullopt; // -1 while moving
+        if (pos)
+            fw->position = *pos >= 0 ? pos : std::nullopt; // -1 while moving
     }
 
-    FilterWheel ReadFilterWheel(Reader& r, int n)
+    FilterWheel ReadFilterWheel(Reader& r, int n, const std::optional<FilterWheel>& last)
     {
         FilterWheel fw;
+        if (last)
+            fw.position = last->position;
         fw.name = Name(r, "filterwheel", n, "unknown");
         r.GetStringList(Path("filterwheel", n, "names"), &fw.names);
         r.GetIntList(Path("filterwheel", n, "focusoffsets"), &fw.focusOffsets);
@@ -155,13 +160,20 @@ namespace
 
     void ReadRotatorPosition(Reader& r, int n, Rotator *rot)
     {
-        rot->position = ReadDouble(r, Path("rotator", n, "position"));
-        rot->mechanicalPosition = ReadDouble(r, Path("rotator", n, "mechanicalposition"));
+        if (std::optional<double> v = ReadDouble(r, Path("rotator", n, "position")))
+            rot->position = v;
+        if (std::optional<double> v = ReadDouble(r, Path("rotator", n, "mechanicalposition")))
+            rot->mechanicalPosition = v;
     }
 
-    Rotator ReadRotator(Reader& r, int n)
+    Rotator ReadRotator(Reader& r, int n, const std::optional<Rotator>& last)
     {
         Rotator rot;
+        if (last)
+        {
+            rot.position = last->position;
+            rot.mechanicalPosition = last->mechanicalPosition;
+        }
         rot.name = Name(r, "rotator", n, "unknown");
         rot.reverse = ReadBool(r, Path("rotator", n, "reverse"));
         ReadRotatorPosition(r, n, &rot);
@@ -170,13 +182,33 @@ namespace
 
     void ReadFocuserPosition(Reader& r, int n, Focuser *f)
     {
-        f->position = ReadInt(r, Path("focuser", n, "position"));
-        f->temperature = ReadDouble(r, Path("focuser", n, "temperature"));
+        if (std::optional<int> v = ReadInt(r, Path("focuser", n, "position")))
+            f->position = v;
+        if (std::optional<double> v = ReadDouble(r, Path("focuser", n, "temperature")))
+            f->temperature = v;
     }
 
-    Focuser ReadFocuser(Reader& r, int n)
+    // the last settled positions, for change detection: a wheel that is
+    // moving (no position) keeps the filter it was last seen at
+    Snapshot KeepSettled(const Snapshot& reported, Snapshot cur)
+    {
+        if (reported.filterWheel && cur.filterWheel && !cur.filterWheel->position)
+            cur.filterWheel->position = reported.filterWheel->position;
+        if (reported.rotator && cur.rotator && !cur.rotator->position)
+            cur.rotator->position = reported.rotator->position;
+        if (reported.focuser && cur.focuser && !cur.focuser->position)
+            cur.focuser->position = reported.focuser->position;
+        return cur;
+    }
+
+    Focuser ReadFocuser(Reader& r, int n, const std::optional<Focuser>& last)
     {
         Focuser f;
+        if (last)
+        {
+            f.position = last->position;
+            f.temperature = last->temperature;
+        }
         f.name = Name(r, "focuser", n, "unknown");
         ReadFocuserPosition(r, n, &f);
         return f;
@@ -204,7 +236,7 @@ namespace
             return "";
         const FilterWheel& fw = *s.filterWheel;
         if (fw.position && *fw.position < (int) fw.names.size())
-            return ", Filter = " + fw.names[*fw.position];
+            return ", Filter = " + CleanText(fw.names[*fw.position]);
         return ", Filter = unknown";
     }
 }
@@ -277,6 +309,7 @@ std::chrono::milliseconds Poller::PollOnce()
     {
         m_reader.reset();
         m_work = Snapshot();
+        m_reported = Snapshot();
         m_work.source = Source::NotAlpaca;
         m_exposing = false;
         m_needFull = true;
@@ -291,7 +324,6 @@ std::chrono::milliseconds Poller::PollOnce()
         m_needFull = true;
     }
     StoppableReader r(*m_reader, m_stopping);
-    Snapshot prev = m_work;
 
     if (m_needFull || now - m_lastFull >= m_timing.full)
     {
@@ -299,6 +331,7 @@ std::chrono::milliseconds Poller::PollOnce()
         if (!r.ConfiguredDevices(&devices))
         {
             m_work = Snapshot();
+            m_reported = Snapshot();
             m_work.source = Source::Unavailable;
             m_exposing = false;
             m_needFull = true;
@@ -320,11 +353,11 @@ std::chrono::milliseconds Poller::PollOnce()
         if (m_camera)
             s.camera = ReadCamera(r, *m_camera);
         if (m_selection.filterWheel)
-            s.filterWheel = ReadFilterWheel(r, *m_selection.filterWheel);
+            s.filterWheel = ReadFilterWheel(r, *m_selection.filterWheel, m_work.filterWheel);
         if (m_selection.rotator)
-            s.rotator = ReadRotator(r, *m_selection.rotator);
+            s.rotator = ReadRotator(r, *m_selection.rotator, m_work.rotator);
         if (m_selection.focuser)
-            s.focuser = ReadFocuser(r, *m_selection.focuser);
+            s.focuser = ReadFocuser(r, *m_selection.focuser, m_work.focuser);
         if (m_selection.conditions)
             s.conditions = ReadConditions(r, *m_selection.conditions);
 
@@ -342,7 +375,8 @@ std::chrono::milliseconds Poller::PollOnce()
             ReadFocuserPosition(r, *m_selection.focuser, &*m_work.focuser);
     }
 
-    std::vector<std::string> lines = EquipmentChangeLines(prev, m_work);
+    std::vector<std::string> lines = EquipmentChangeLines(m_reported, m_work);
+    m_reported = KeepSettled(m_reported, m_work);
 
     if (m_camera)
     {

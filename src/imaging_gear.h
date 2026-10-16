@@ -91,6 +91,9 @@ struct Snapshot
     std::optional<Conditions> conditions;
 };
 
+// text from the server with line breaks and commas (the log's delimiters) replaced
+std::string CleanText(std::string s);
+
 // arc-sec per imaging pixel: 206.265 x pixel size (um) x binning / focal length (mm)
 std::optional<double> PixelScale(const Snapshot& s);
 

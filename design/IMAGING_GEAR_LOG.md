@@ -31,6 +31,8 @@ Guide train = Separate guide scope, Guide/imaging focal length ratio = 0.48
   is Alpaca-only and never writes `not Alpaca`.
 - A device line is omitted when there is no such device. `Imaging camera = ambiguous (n cameras)`
   is written, with no values, when the camera can't be chosen (below).
+- Names and other text from the server have line breaks replaced by spaces and commas by
+  semicolons, so they can't break a record or a value list.
 - Every value the driver doesn't report (an error, `NotImplemented`, NaN, or 0 for focal length
   or aperture) is written as `unknown`; the key is always written.
 - `Guide train` is always written: `Off-axis guider` when the guide/imaging focal length ratio is
@@ -49,7 +51,9 @@ INFO: IMAGING EXPOSURE end, Duration = 300.0 s
 INFO: CONDITIONS Seeing = 2.4 arc-sec, Wind speed = 5.1 m/s, Wind gust = 8.0 m/s, Temperature = 7.2 C, Humidity = 78 %
 ```
 
-- `EQUIPMENT Filter` when the wheel settles at a new position (nothing while it moves).
+- `EQUIPMENT Filter` when the wheel settles at a new position (nothing while it moves, nothing when
+  it moves back to the filter it left). A position read that fails keeps the last value, so a
+  network blip is not taken for a move.
 - `EQUIPMENT Rotator position` when the position changes at 0.1 deg resolution.
 - `EQUIPMENT Focuser position` when the focuser position changes (not for temperature drift alone).
 - `IMAGING EXPOSURE start` when the imaging camera's `CameraState` becomes waiting/exposing, and
@@ -95,7 +99,7 @@ From `GET management/v1/configureddevices` on the same server:
 
 - **Read only.** Only `GET`s; nothing is ever written to these devices, in particular not
   `Connected`. The imaging app owns them.
-- **Never slows guiding.** A background thread reads with a 2 s timeout and keeps the latest
+- **Never slows guiding.** A background thread reads with a 2 s timeout (no retries) and keeps the latest
   values in a cache; the log writer only reads the cache. Fast values (camera state, filter,
   rotator, focuser) every 2 s, everything else and device discovery every 30 s, a retry every
   10 s when the server can't be read. Successful reads aren't written to the debug log.
