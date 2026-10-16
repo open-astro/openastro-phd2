@@ -39,6 +39,7 @@ GTest is fetched automatically via `FetchContent` (pinned to v1.17.0 in
 | `test_discovery_logic` | `host:port` parsing and the `std::set` dedupe model shared by `AlpacaDiscovery::DiscoverServers` and `INDIDiscovery::DiscoverServers` | Model: reproduces the dedupe / parse semantics in `std::string` form, so the actual sockets-bound functions don't have to be runnable in a unit-test process |
 | `test_indi_discovery` | `indi_discovery.cpp` INDI-specific math — subnet enumeration prefix clamping (16..30, default /24), mask construction, loopback skip, scan-range network/broadcast skip, the always-add-`127.0.0.1` contract from the 1.3.0 loopback fix | Model |
 | `test_guide_algorithm_math` | `result()` / `reset()` for `GuideAlgorithmIdentity`, `GuideAlgorithmHysteresis`, `GuideAlgorithmResistSwitch` | Math-twin: each algorithm's formula is reimplemented in the test alongside the production line numbers; tests pin the input/output curve on a fixed scenario |
+| `test_imaging_gear` | `src/imaging_gear.cpp` and `src/imaging_gear_poller.cpp` — the imaging-gear guide log lines (`design/IMAGING_GEAR_LOG.md`), pixel scale, `unknown` values, Alpaca device selection, INFO lines from changes between polls, and that the cache never waits on a 5 s server | Direct (extract-for-testability): wx-free code linked unmodified, driven by a fake read-only `Reader` |
 
 ## How the build infra works (and why)
 

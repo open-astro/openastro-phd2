@@ -130,6 +130,22 @@ wxString AlpacaClient::LastAlpacaError()
     return m_lastAlpacaError;
 }
 
+void AlpacaClient::SetTimeoutMs(long totalMs, long connectMs)
+{
+    wxMutexLocker lock(m_mutex);
+    if (m_curl)
+    {
+        curl_easy_setopt(m_curl, CURLOPT_TIMEOUT_MS, totalMs);
+        curl_easy_setopt(m_curl, CURLOPT_CONNECTTIMEOUT_MS, connectMs);
+    }
+}
+
+void AlpacaClient::SetLogRequests(bool log)
+{
+    wxMutexLocker lock(m_mutex);
+    m_logRequests = log;
+}
+
 wxString AlpacaClient::BuildRequestUrl(const wxString& endpoint) const
 {
     if (endpoint.StartsWith("http://") || endpoint.StartsWith("https://"))
@@ -210,7 +226,8 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
 
     wxString url = AppendClientInfo(BuildRequestUrl(endpoint), wxString());
 
-    Debug.Write(wxString::Format("AlpacaClient GET: %s\n", url));
+    if (m_logRequests)
+        Debug.Write(wxString::Format("AlpacaClient GET: %s\n", url));
     curl_easy_setopt(m_curl, CURLOPT_URL, static_cast<const char *>(url.mb_str(wxConvUTF8)));
 
     // Explicitly tell server to close connection after response
@@ -322,9 +339,10 @@ bool AlpacaClient::Get(const wxString& endpoint, JsonParser& parser, long *error
     // Log the actual response for debugging (truncate if too long)
     wxString responsePreview = responseStr.length() > 500 ? wxString(responseStr.substr(0, 500).c_str(), wxConvUTF8) + "..."
                                                           : wxString(responseStr.c_str(), wxConvUTF8);
-    Debug.Write(wxString::Format(
-        "AlpacaClient GET response (HTTP %ld, received %ld bytes, expected %.0f bytes, downloaded %.0f bytes): %s\n", httpCode,
-        responseStr.length(), contentLength, downloadSize, responsePreview));
+    if (m_logRequests)
+        Debug.Write(wxString::Format(
+            "AlpacaClient GET response (HTTP %ld, received %ld bytes, expected %.0f bytes, downloaded %.0f bytes): %s\n",
+            httpCode, responseStr.length(), contentLength, downloadSize, responsePreview));
 
     // If we got HTTP 200 but 0 bytes, this is suspicious
     if (httpCode == 200 && responseStr.length() == 0 && contentLength > 0)

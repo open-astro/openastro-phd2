@@ -121,3 +121,19 @@ add_executable(test_indi_discovery
 target_link_libraries(test_indi_discovery PRIVATE phd_test_common)
 set_property(TARGET test_indi_discovery PROPERTY FOLDER "Unit tests")
 add_test(NAME test_indi_discovery COMMAND test_indi_discovery)
+
+############################################################################
+# test_imaging_gear  --  imaging_gear.cpp: the imaging-train guide log
+# lines (design/IMAGING_GEAR_LOG.md), pixel scale, unknown values and
+# Alpaca device selection. std-only.
+############################################################################
+add_executable(test_imaging_gear
+  ${PHD_TESTS_DIR}/imaging_gear/test_imaging_gear.cpp
+  ${PHD_TESTS_DIR}/imaging_gear/test_imaging_gear_poller.cpp
+  ${phd_src_dir}/imaging_gear.cpp
+  ${phd_src_dir}/imaging_gear_poller.cpp
+)
+find_package(Threads REQUIRED)
+target_link_libraries(test_imaging_gear PRIVATE phd_test_common Threads::Threads)
+set_property(TARGET test_imaging_gear PROPERTY FOLDER "Unit tests")
+add_test(NAME test_imaging_gear COMMAND test_imaging_gear)
