@@ -7,6 +7,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [2.2.1] - 2026-10-16
+
+### Added
+- The guide log now describes the imaging train when the guider is connected through Alpaca: telescope (focal length, aperture), imaging camera (sensor, pixel size, binning, imaging pixel scale, gain, offset, readout mode, cooler), filter wheel, rotator, focuser, observing conditions and the guide train, at the start of every guiding and calibration section, plus `INFO: EQUIPMENT`, `INFO: IMAGING EXPOSURE` and `INFO: CONDITIONS` lines while guiding. Everything is read from the same Alpaca server (GET-only, on a background thread with a 2 s timeout, so guiding never waits on it); nothing to set up. Format: `design/IMAGING_GEAR_LOG.md`, shared with openastro-guider and Guide Insight (#33).
+
+### Fixed
+- Camera gain can now be set on Alpaca cameras (e.g. a ZWO ASI120MM behind AlpacaBridge): gain support is read from `GainMin`/`GainMax` on connect and the 0-100 % setting is sent to the driver before an exposure (open-astro/openastro-guider#79).
+- The arm64 and amd64 `.deb` packages install on Debian 13 / Raspberry Pi OS Trixie again: v2.2.0 depended on `libindi1`, which only existed in the INDI PPA that has since deleted it. INDI 2.2.1.1 is now built in, so the package no longer depends on a system libindi (#31).
+
 ### CI / packaging
 - Linux CI no longer depends on `ppa:mutlaqja/ppa` for libindi. The PPA's libindi 2.x packages were deleted on 2026-08-25, which made every Linux job fall back to Ubuntu's libindi 1.9.9 and fail configure. All Linux workflows now build the pinned INDI 2.2.1.1 client from source (`USE_SYSTEM_LIBINDI=0`), the same path `debian/rules` already used when no suitable system libindi is present; the clang-tidy job builds the INDI target first so its headers exist.
 
