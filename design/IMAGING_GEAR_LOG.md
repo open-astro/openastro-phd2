@@ -27,7 +27,8 @@ Guide train = Separate guide scope, Guide/imaging focal length ratio = 0.48
 - `Equipment source` is `<ServerName> host:port` (`ServerName` from `management/v1/description`,
   `Alpaca` if not reported), `not Alpaca` when neither the guide camera nor the mount is
   connected through Alpaca (openastro-phd2 with INDI/ASCOM), or `unavailable` when the server
-  could not be read. With `not Alpaca` or `unavailable` no other line follows.
+  could not be read. With `not Alpaca` or `unavailable` no other line follows. openastro-guider
+  is Alpaca-only and never writes `not Alpaca`.
 - A device line is omitted when there is no such device. `Imaging camera = ambiguous (n cameras)`
   is written, with no values, when the camera can't be chosen (below).
 - Every value the driver doesn't report (an error, `NotImplemented`, NaN, or 0 for focal length
