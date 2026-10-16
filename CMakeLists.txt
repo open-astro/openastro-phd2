@@ -195,6 +195,12 @@ set(cam_SRC
   ${phd_src_dir}/cam_alpaca.h
   ${phd_src_dir}/alpaca_client.cpp
   ${phd_src_dir}/alpaca_client.h
+  ${phd_src_dir}/imaging_gear.cpp
+  ${phd_src_dir}/imaging_gear.h
+  ${phd_src_dir}/imaging_gear_alpaca.cpp
+  ${phd_src_dir}/imaging_gear_alpaca.h
+  ${phd_src_dir}/imaging_gear_poller.cpp
+  ${phd_src_dir}/imaging_gear_poller.h
   ${phd_src_dir}/alpaca_gain.cpp
   ${phd_src_dir}/alpaca_gain.h
   ${phd_src_dir}/alpaca_discovery.cpp

@@ -33,6 +33,7 @@
  */
 
 #include "phd.h"
+#include "imaging_gear_alpaca.h"
 #include "profile_wizard.h"
 
 #include <wx/gbsizer.h>
@@ -637,6 +638,9 @@ void GearDialog::UpdateButtonState()
     UpdateRotatorButtonState();
     UpdateConnectAllButtonState();
     UpdateDisconnectAllButtonState();
+
+    // equipment may have connected or disconnected
+    ImagingGearLog::EquipmentChanged();
 }
 
 void GearDialog::OnButtonConnectAll(wxCommandEvent& event)

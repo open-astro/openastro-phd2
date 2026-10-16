@@ -34,6 +34,7 @@
  */
 
 #include "phd.h"
+#include "imaging_gear_alpaca.h"
 
 #include <wx/wfstream.h>
 #include <wx/txtstrm.h>
@@ -165,10 +166,18 @@ static wxString PointingInfo()
     return rslt;
 }
 
+// imaging-gear INFO lines (design/IMAGING_GEAR_LOG.md) queued since the last frame
+static void WriteImagingGearInfo(wxFFile& file)
+{
+    for (const std::string& line : ImagingGearLog::TakeInfoLines())
+        file.Write(wxString::FromUTF8(line) + "\n");
+}
+
 static void GuidingHeader(wxFFile& file)
 // output guiding header to log file
 {
     file.Write("Equipment Profile = " + pConfig->GetCurrentProfile() + "\n");
+    file.Write(wxString::FromUTF8(ImagingGearLog::Header()));
 
     file.Write(pFrame->GetSettingsSummary());
     file.Write(pFrame->pGuider->GetSettingsSummary());
@@ -295,6 +304,7 @@ void GuidingLog::EnableLogging()
                      logFileTime.Format(_T("%Y-%m-%d %H:%M:%S")) + "\n");
 
         m_enabled = true;
+        ImagingGearLog::Start();
 
         // persist state
         pConfig->Global.SetBoolean("/LoggingMode", m_enabled);
@@ -334,6 +344,7 @@ void GuidingLog::DisableLogging()
     }
 
     m_enabled = false;
+    ImagingGearLog::Stop();
 
     // persist state
     pConfig->Global.SetBoolean("/LoggingMode", m_enabled);
@@ -408,6 +419,7 @@ void GuidingLog::CloseGuideLog()
     }
 
     m_enabled = false;
+    ImagingGearLog::Stop();
 
     if (!m_keepFile) // Delete the file if nothing useful was logged
     {
@@ -428,6 +440,7 @@ void GuidingLog::StartCalibration(const Mount *pCalibrationMount)
     m_file.Write("\n");
     m_file.Write("Calibration Begins at " + now.Format(_T("%Y-%m-%d %H:%M:%S")) + "\n");
     m_file.Write("Equipment Profile = " + pConfig->GetCurrentProfile() + "\n");
+    m_file.Write(wxString::FromUTF8(ImagingGearLog::Header()));
 
     m_file.Write(pFrame->GetSettingsSummary());
     m_file.Write(pFrame->pGuider->GetSettingsSummary());
@@ -486,6 +499,7 @@ void GuidingLog::CalibrationStep(const CalibrationStepInfo& info)
     // Direction,Step,dx,dy,x,y,Dist
     m_file.Write(wxString::Format("%s,%d,%.3f,%.3f,%.3f,%.3f,%.3f\n", info.direction, info.stepNumber, info.dx, info.dy,
                                   info.pos.X, info.pos.Y, info.dist));
+    WriteImagingGearInfo(m_file);
 
     Flush();
 }
@@ -582,6 +596,7 @@ void GuidingLog::GuideStep(const GuideStepInfo& step)
     }
 
     m_file.Write(wxString::Format("%.f,%.2f,%d\n", step.starMass, step.starSNR, step.starError));
+    WriteImagingGearInfo(m_file);
 
     Flush();
 }
