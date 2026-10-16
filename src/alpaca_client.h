@@ -56,6 +56,7 @@ private:
     // response, cleared at the start of each request. Guarded by m_mutex;
     // only meaningful immediately after a Get/Put/etc. returned false.
     wxString m_lastAlpacaError;
+    bool m_logRequests = true;
 
     static size_t WriteCallback(void *contents, size_t size, size_t nmemb, void *userp);
     wxString BuildRequestUrl(const wxString& endpoint) const;
@@ -89,6 +90,11 @@ public:
     // Returns a copy taken under the client mutex so callers can't race a
     // concurrent request updating the message.
     wxString LastAlpacaError();
+
+    // For background readers: a shorter curl timeout than the 30 s default,
+    // and no debug log lines for successful GETs (failures are still logged).
+    void SetTimeoutMs(long totalMs, long connectMs);
+    void SetLogRequests(bool log);
 };
 
 #endif // ALPACA_CLIENT_H
