@@ -109,6 +109,7 @@ private:
     Snapshot m_reported; // last settled positions, for INFO: EQUIPMENT lines
     std::chrono::steady_clock::time_point m_lastFull, m_lastConditions;
     bool m_needFull = true;
+    int m_failedDiscoveries = 0;
 
     std::thread m_thread;
 };
