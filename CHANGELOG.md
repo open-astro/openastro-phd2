@@ -7,6 +7,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Imaging-gear guide log: a switch to another filter wheel, rotator or focuser is no longer logged as a filter/position change, and switching imaging cameras no longer ends an exposure in the log. The shared imaging-gear code also gains per-device overrides and a JSON form of the snapshot, used by openastro-guider's `set_imaging_gear_devices` / `get_imaging_gear` (open-astro/openastro-guider#89); openastro-phd2 has no RPC for them.
+
 ## [2.2.1] - 2026-10-16
 
 ### Added
