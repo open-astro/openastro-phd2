@@ -7,7 +7,8 @@ guiding against the imaging pixel scale. Nothing is entered in the guider.
 
 This format is shared by **openastro-phd2** and **openastro-guider** (same code in
 `src/imaging_gear*.cpp`) and is read by Guide Insight. Change all three together.
-Tracked in open-astro/openastro-phd2#33 and open-astro/openastro-guider#82.
+Tracked in open-astro/openastro-phd2#33 and open-astro/openastro-guider#82; the device overrides
+and the JSON form (below) in open-astro/openastro-guider#89.
 
 ## Header lines
 
@@ -34,7 +35,8 @@ Guide train = Separate guide scope, Guide/imaging focal length ratio = 0.48
 - Names and other text from the server have line breaks replaced by spaces and commas by
   semicolons, so they can't break a record or a value list.
 - Every value the driver doesn't report (an error, `NotImplemented`, NaN, or 0 for focal length
-  or aperture) is written as `unknown`; the key is always written.
+  or aperture) is written as `unknown`; the key is always written. So is a device name the
+  driver doesn't report.
 - `Guide train` is always written: `Off-axis guider` when the guide/imaging focal length ratio is
   within 0.15 of 1, otherwise `Separate guide scope`; `unknown` when either focal length is unknown.
 
@@ -53,7 +55,8 @@ INFO: CONDITIONS Seeing = 2.4 arc-sec, Wind speed = 5.1 m/s, Wind gust = 8.0 m/s
 
 - `EQUIPMENT Filter` when the wheel settles at a new position (nothing while it moves, nothing when
   it moves back to the filter it left). A position read that fails keeps the last value, so a
-  network blip is not taken for a move.
+  network blip is not taken for a move. Switching to another wheel, rotator or focuser (a device
+  override, below) is not a move either: no line.
 - `EQUIPMENT Rotator position` when the position changes at 0.1 deg resolution.
 - `EQUIPMENT Focuser position` when the focuser position changes (not for temperature drift alone).
 - `IMAGING EXPOSURE start` when the imaging camera's `CameraState` becomes waiting/exposing, and
@@ -95,6 +98,25 @@ From `GET management/v1/configureddevices` on the same server:
 - **Imaging camera**: every camera except the guide camera. With one, that one. With several,
   the one that is connected and exposing, else the only connected one; otherwise ambiguous.
 
+**Overrides.** The imaging app can name the device to read for each type (openastro-guider's
+`set_imaging_gear_devices` RPC; openastro-phd2 has the same code but no way to set them yet).
+An override wins over the rules above, including the device the guider is connected to; with a
+camera override the camera is never ambiguous. An override naming a device that isn't in
+`configureddevices` selects nothing for that type (the line is omitted) rather than reading a
+device that isn't there. The guide camera is never the imaging camera: the RPC refuses it, and a
+camera override that has since become the guide camera is ignored (the rules apply). Overrides
+are kept in memory until changed or the guider exits, not in the profile: the imaging app sets
+them each session, and a saved number would silently pick the wrong device on another rig or
+server. A change takes effect on the next poll, which rediscovers the devices.
+
+## JSON (`get_imaging_gear`)
+
+openastro-guider also returns the cached values as JSON (`ImagingGear::SnapshotJson`; field list
+in its `design/API_REFERENCE.md`). Same values as the header lines, unrounded (`%.6g`), with
+`null` wherever the log writes `unknown`; names are not comma-cleaned (JSON escaping makes that
+unnecessary). With `source` `not_alpaca` or `unavailable` every device is `null`. Filter
+`position` is 1-based, as in the log. Each device also carries its Alpaca `device` number.
+
 ## Rules
 
 - **Read only.** Only `GET`s; nothing is ever written to these devices, in particular not
@@ -106,4 +128,4 @@ From `GET management/v1/configureddevices` on the same server:
   three in a row the header says `unavailable`. Successful reads aren't written to the debug log.
 - A header written in the first seconds after the guider connects, before the first read
   completes, says `unavailable`.
-- **No settings.**
+- **No settings** in the guider's UI or profile; only the per-session overrides above.

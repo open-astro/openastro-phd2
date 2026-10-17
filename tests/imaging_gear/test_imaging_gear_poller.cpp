@@ -344,3 +344,154 @@ TEST(ImagingGearPoller, AFailedDiscoveryKeepsTheLastKnownGear)
     p.PollOnce();
     EXPECT_EQ(p.Latest().source, Source::Alpaca);
 }
+
+TEST(ImagingGearPoller, TheSnapshotNamesTheDevicesRead)
+{
+    FakeServer s;
+    Rig(s);
+    Poller p(FactoryFor(s), Instant(), false);
+    p.SetContext(AlpacaContext());
+    p.PollOnce();
+    Snapshot snap = p.Latest();
+    EXPECT_EQ(snap.telescope->device, 0);
+    EXPECT_EQ(snap.camera->device, 1);
+    EXPECT_EQ(snap.filterWheel->device, 0);
+    EXPECT_EQ(snap.focuser->device, 0);
+    EXPECT_EQ(snap.conditions->device, 0);
+}
+
+namespace
+{
+// two idle connected imaging cameras: ambiguous without an override
+void TwoImagingCameras(FakeServer& s)
+{
+    Rig(s);
+    s.devices.push_back({ "Camera", 2, "Spare" });
+    s.strings["camera/2/name"] = "Spare camera";
+    s.bools["camera/1/connected"] = true;
+    s.bools["camera/2/connected"] = true;
+    s.ints["camera/2/camerastate"] = 0;
+}
+}
+
+TEST(ImagingGearPoller, OverridesTakeEffectOnTheNextPoll)
+{
+    FakeServer s;
+    TwoImagingCameras(s);
+    Poller p(FactoryFor(s), Instant(), false); // full = 1 h: only a context change rediscovers
+    Context ctx = AlpacaContext();
+    p.SetContext(ctx);
+    p.PollOnce();
+    EXPECT_FALSE(p.Latest().camera.has_value());
+    EXPECT_EQ(p.Latest().ambiguousCameras, 2);
+
+    ctx.overrides.camera = 2;
+    p.SetContext(ctx);
+    p.PollOnce();
+    ASSERT_TRUE(p.Latest().camera);
+    EXPECT_EQ(p.Latest().camera->device, 2);
+    EXPECT_EQ(p.Latest().camera->name, "Spare camera");
+    EXPECT_EQ(p.Latest().ambiguousCameras, 0);
+
+    ctx.overrides = Overrides();
+    p.SetContext(ctx);
+    p.PollOnce();
+    EXPECT_FALSE(p.Latest().camera.has_value());
+    EXPECT_EQ(p.Latest().ambiguousCameras, 2);
+}
+
+TEST(ImagingGearPoller, SwitchingWheelsIsNotAFilterChange)
+{
+    FakeServer s;
+    Rig(s);
+    s.devices.push_back({ "FilterWheel", 1, "EFW mini" });
+    s.strings["filterwheel/1/name"] = "ZWO EFW mini";
+    s.stringLists["filterwheel/1/names"] = { "L", "R", "G", "B", "Ha" };
+    s.ints["filterwheel/1/position"] = 4;
+    Poller p(FactoryFor(s), Instant(), false);
+    Context ctx = AlpacaContext();
+    ctx.overrides.filterWheel = 1;
+    p.SetContext(ctx);
+    p.PollOnce();
+    ASSERT_TRUE(p.Latest().filterWheel);
+    EXPECT_EQ(p.Latest().filterWheel->name, "ZWO EFW mini");
+    EXPECT_EQ(p.Latest().filterWheel->position, 4);
+
+    ctx.overrides.filterWheel = 0;
+    p.SetContext(ctx);
+    p.PollOnce();
+    ASSERT_TRUE(p.Latest().filterWheel);
+    EXPECT_EQ(p.Latest().filterWheel->device, 0);
+    EXPECT_EQ(p.Latest().filterWheel->position, 2);
+    EXPECT_TRUE(p.TakeInfoLines().empty());
+
+    // wheel 1 doesn't answer its position: it has none, not wheel 0's
+    s.ints.erase("filterwheel/1/position");
+    ctx.overrides.filterWheel = 1;
+    p.SetContext(ctx);
+    p.PollOnce();
+    ASSERT_TRUE(p.Latest().filterWheel);
+    EXPECT_EQ(p.Latest().filterWheel->device, 1);
+    EXPECT_FALSE(p.Latest().filterWheel->position.has_value());
+    EXPECT_TRUE(p.TakeInfoLines().empty());
+}
+
+TEST(ImagingGearPoller, OverridesSetWhileThePollThreadRuns)
+{
+    FakeServer s;
+    TwoImagingCameras(s);
+    Poller::Timing t = Instant();
+    t.fast = 5ms;
+    Poller p(FactoryFor(s), t, true);
+    Context ctx = AlpacaContext();
+    p.SetContext(ctx);
+
+    auto waitFor = [&p](const std::function<bool(const Snapshot&)>& done)
+    {
+        for (int i = 0; i < 400; i++)
+        {
+            if (done(p.Latest()))
+                return true;
+            std::this_thread::sleep_for(5ms);
+        }
+        return false;
+    };
+    EXPECT_TRUE(waitFor([](const Snapshot& snap) { return snap.ambiguousCameras == 2; }));
+    ctx.overrides.camera = 2;
+    p.SetContext(ctx);
+    EXPECT_TRUE(waitFor([](const Snapshot& snap) { return snap.camera && snap.camera->device == 2; }));
+}
+
+TEST(ImagingGearPoller, SwitchingCamerasDoesNotEndAnExposure)
+{
+    FakeServer s;
+    TwoImagingCameras(s);
+    s.ints["camera/1/camerastate"] = 2; // exposing
+    Poller p(FactoryFor(s), Instant(), false);
+    Context ctx = AlpacaContext();
+    ctx.overrides.camera = 1;
+    p.SetContext(ctx);
+    p.PollOnce();
+    std::vector<std::string> lines = p.TakeInfoLines();
+    ASSERT_EQ(lines.size(), 1u);
+    EXPECT_EQ(lines[0].rfind("INFO: IMAGING EXPOSURE start", 0), 0u) << lines[0];
+
+    // camera 2 is idle: that is not the end of camera 1's exposure
+    s.doubles["camera/2/lastexposureduration"] = 60.0;
+    ctx.overrides.camera = 2;
+    p.SetContext(ctx);
+    p.PollOnce();
+    EXPECT_TRUE(p.TakeInfoLines().empty());
+}
+
+TEST(ImagingGearPoller, AnUnreportedNameStaysEmpty)
+{
+    FakeServer s;
+    Rig(s);
+    s.strings.erase("focuser/0/name");
+    Poller p(FactoryFor(s), Instant(), false);
+    p.SetContext(AlpacaContext());
+    p.PollOnce();
+    ASSERT_TRUE(p.Latest().focuser);
+    EXPECT_EQ(p.Latest().focuser->name, "");
+}

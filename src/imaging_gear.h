@@ -4,7 +4,8 @@
  *
  *  The imaging train (telescope, camera, filter wheel, rotator, focuser,
  *  observing conditions) read from the Alpaca server the guider already uses,
- *  and the guide log lines that describe it. Line format: design/IMAGING_GEAR_LOG.md.
+ *  the guide log lines that describe it, and the get_imaging_gear JSON. Line
+ *  format: design/IMAGING_GEAR_LOG.md.
  *  Kept free of wx so it can be unit tested (tests/imaging_gear/).
  */
 
@@ -26,6 +27,7 @@ struct ConfiguredDevice
 
 struct Telescope
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<double> focalLengthM; // ASCOM FocalLength, metres
     std::optional<double> apertureM; // ASCOM ApertureDiameter, metres
@@ -33,6 +35,7 @@ struct Telescope
 
 struct Camera
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<std::string> sensorName;
     std::optional<int> sensorType; // ASCOM SensorType
@@ -45,6 +48,7 @@ struct Camera
 
 struct FilterWheel
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<int> position; // ASCOM, 0-based; unset while moving
     std::vector<std::string> names;
@@ -53,6 +57,7 @@ struct FilterWheel
 
 struct Rotator
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<double> position, mechanicalPosition;
     std::optional<bool> reverse;
@@ -60,6 +65,7 @@ struct Rotator
 
 struct Focuser
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<int> position;
     std::optional<double> temperature;
@@ -67,6 +73,7 @@ struct Focuser
 
 struct Conditions
 {
+    int device = -1; // Alpaca device number, -1 when unknown
     std::string name;
     std::optional<double> starFwhm, windSpeed, windGust, temperature, humidity, dewPoint, pressure, cloudCover, skyQuality;
 };
@@ -107,6 +114,34 @@ std::vector<std::string> EquipmentChangeLines(const Snapshot& prev, const Snapsh
 // "INFO: CONDITIONS ..." line; empty when there is no conditions device
 std::string ConditionsLine(const Snapshot& s);
 
+// Alpaca device numbers the imaging app named with set_imaging_gear_devices;
+// each one wins over the selection rules for its type.
+struct Overrides
+{
+    std::optional<int> camera, filterWheel, focuser, rotator, telescope, conditions;
+
+    bool operator==(const Overrides& o) const
+    {
+        return camera == o.camera && filterWheel == o.filterWheel && focuser == o.focuser && rotator == o.rotator &&
+            telescope == o.telescope && conditions == o.conditions;
+    }
+    bool operator!=(const Overrides& o) const { return !(*this == o); }
+};
+
+// Sets one override; name is the set_imaging_gear_devices parameter ("camera",
+// "filterwheel", "focuser", "rotator", "telescope", "observingconditions"),
+// device an Alpaca device number or -1 to clear it. guideCamera is the guide
+// camera's device number (-1 if not Alpaca), which is refused as the imaging
+// camera. On error o is unchanged.
+bool SetOverride(Overrides *o, const std::string& name, int device, int guideCamera, std::string *error);
+
+// {"camera": n|null, "filterwheel": ..., "observingconditions": ...}
+std::string OverridesJson(const Overrides& overrides);
+
+// get_imaging_gear: the snapshot as a JSON object, null for every value the
+// log writes as "unknown"; guideFocalLengthMm <= 0 means unknown
+std::string SnapshotJson(const Snapshot& s, double guideFocalLengthMm, const Overrides& overrides);
+
 // Which devices to read, chosen from management/v1/configureddevices.
 struct Selection
 {
@@ -114,9 +149,11 @@ struct Selection
     std::vector<int> cameraCandidates; // every camera except the guide camera
 };
 
-// connected* are the device numbers the guider is connected to, or -1
+// connected* are the device numbers the guider is connected to, or -1. An
+// override wins when that device is configured (none of its type is read when
+// it isn't); a camera override that is the guide camera is ignored.
 Selection SelectDevices(const std::vector<ConfiguredDevice>& devices, int guideCamera, int connectedTelescope,
-                        int connectedRotator);
+                        int connectedRotator, const Overrides& overrides = Overrides());
 }
 
 #endif

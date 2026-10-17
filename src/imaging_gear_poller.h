@@ -40,7 +40,8 @@ public:
     virtual bool GetIntList(const std::string& path, std::vector<int> *value) = 0;
 };
 
-// What the guider is connected to; set from the main thread.
+// What the guider is connected to, and the devices the imaging app named;
+// set from the main thread. A change makes the next poll rediscover the devices.
 struct Context
 {
     bool alpaca = false; // false: the guider is not connected through Alpaca
@@ -49,11 +50,12 @@ struct Context
     int guideCamera = -1; // Alpaca device numbers, -1 when not connected through Alpaca
     int telescope = -1;
     int rotator = -1;
+    Overrides overrides;
 
     bool operator==(const Context& o) const
     {
         return alpaca == o.alpaca && host == o.host && port == o.port && guideCamera == o.guideCamera &&
-            telescope == o.telescope && rotator == o.rotator;
+            telescope == o.telescope && rotator == o.rotator && overrides == o.overrides;
     }
     bool operator!=(const Context& o) const { return !(*this == o); }
 };
