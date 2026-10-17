@@ -69,10 +69,10 @@ namespace
         return Read<bool>([&](bool *v) { return r.GetBool(path, v); });
     }
 
-    std::string Name(Reader& r, const char *type, int number, const std::string& fallback)
+    // empty when not reported: "unknown" in the log, null in get_imaging_gear
+    std::string Name(Reader& r, const char *type, int number)
     {
-        std::optional<std::string> name = ReadString(r, Path(type, number, "name"));
-        return name && !name->empty() ? *name : fallback;
+        return ReadString(r, Path(type, number, "name")).value_or("");
     }
 
     bool Exposing(const std::optional<int>& cameraState)
@@ -109,7 +109,8 @@ namespace
     Telescope ReadTelescope(Reader& r, int n)
     {
         Telescope t;
-        t.name = Name(r, "telescope", n, "unknown");
+        t.device = n;
+        t.name = Name(r, "telescope", n);
         t.focalLengthM = ReadDouble(r, Path("telescope", n, "focallength"));
         t.apertureM = ReadDouble(r, Path("telescope", n, "aperturediameter"));
         return t;
@@ -118,7 +119,8 @@ namespace
     Camera ReadCamera(Reader& r, int n)
     {
         Camera c;
-        c.name = Name(r, "camera", n, "unknown");
+        c.device = n;
+        c.name = Name(r, "camera", n);
         c.sensorName = ReadString(r, Path("camera", n, "sensorname"));
         c.sensorType = ReadInt(r, Path("camera", n, "sensortype"));
         c.pixelSizeX = ReadDouble(r, Path("camera", n, "pixelsizex"));
@@ -150,9 +152,10 @@ namespace
     FilterWheel ReadFilterWheel(Reader& r, int n, const std::optional<FilterWheel>& last)
     {
         FilterWheel fw;
-        if (last)
+        fw.device = n;
+        if (last && last->device == n)
             fw.position = last->position;
-        fw.name = Name(r, "filterwheel", n, "unknown");
+        fw.name = Name(r, "filterwheel", n);
         r.GetStringList(Path("filterwheel", n, "names"), &fw.names);
         r.GetIntList(Path("filterwheel", n, "focusoffsets"), &fw.focusOffsets);
         ReadFilterPosition(r, n, &fw);
@@ -170,12 +173,13 @@ namespace
     Rotator ReadRotator(Reader& r, int n, const std::optional<Rotator>& last)
     {
         Rotator rot;
-        if (last)
+        rot.device = n;
+        if (last && last->device == n)
         {
             rot.position = last->position;
             rot.mechanicalPosition = last->mechanicalPosition;
         }
-        rot.name = Name(r, "rotator", n, "unknown");
+        rot.name = Name(r, "rotator", n);
         rot.reverse = ReadBool(r, Path("rotator", n, "reverse"));
         ReadRotatorPosition(r, n, &rot);
         return rot;
@@ -194,11 +198,12 @@ namespace
     Snapshot KeepSettled(const Snapshot& reported, const Snapshot& latest)
     {
         Snapshot cur = latest;
-        if (reported.filterWheel && cur.filterWheel && !cur.filterWheel->position)
+        if (reported.filterWheel && cur.filterWheel && cur.filterWheel->device == reported.filterWheel->device &&
+            !cur.filterWheel->position)
             cur.filterWheel->position = reported.filterWheel->position;
-        if (reported.rotator && cur.rotator && !cur.rotator->position)
+        if (reported.rotator && cur.rotator && cur.rotator->device == reported.rotator->device && !cur.rotator->position)
             cur.rotator->position = reported.rotator->position;
-        if (reported.focuser && cur.focuser && !cur.focuser->position)
+        if (reported.focuser && cur.focuser && cur.focuser->device == reported.focuser->device && !cur.focuser->position)
             cur.focuser->position = reported.focuser->position;
         return cur;
     }
@@ -206,12 +211,13 @@ namespace
     Focuser ReadFocuser(Reader& r, int n, const std::optional<Focuser>& last)
     {
         Focuser f;
-        if (last)
+        f.device = n;
+        if (last && last->device == n)
         {
             f.position = last->position;
             f.temperature = last->temperature;
         }
-        f.name = Name(r, "focuser", n, "unknown");
+        f.name = Name(r, "focuser", n);
         ReadFocuserPosition(r, n, &f);
         return f;
     }
@@ -219,7 +225,8 @@ namespace
     Conditions ReadConditions(Reader& r, int n)
     {
         Conditions oc;
-        oc.name = Name(r, "observingconditions", n, "unknown");
+        oc.device = n;
+        oc.name = Name(r, "observingconditions", n);
         oc.starFwhm = ReadDouble(r, Path("observingconditions", n, "starfwhm"));
         oc.windSpeed = ReadDouble(r, Path("observingconditions", n, "windspeed"));
         oc.windGust = ReadDouble(r, Path("observingconditions", n, "windgust"));
@@ -359,8 +366,11 @@ std::chrono::milliseconds Poller::PollOnce()
             name = "Alpaca";
         s.server = name + " " + ctx.host + ":" + std::to_string(ctx.port);
 
-        m_selection = SelectDevices(devices, ctx.guideCamera, ctx.telescope, ctx.rotator);
-        m_camera = ChooseCamera(r, m_selection.cameraCandidates, &s.ambiguousCameras);
+        m_selection = SelectDevices(devices, ctx.guideCamera, ctx.telescope, ctx.rotator, ctx.overrides);
+        std::optional<int> camera = ChooseCamera(r, m_selection.cameraCandidates, &s.ambiguousCameras);
+        if (camera != m_camera)
+            m_exposing = false; // another camera's exposure is no end or start of this one's
+        m_camera = camera;
         if (m_selection.telescope)
             s.telescope = ReadTelescope(r, *m_selection.telescope);
         if (m_camera)
